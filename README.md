@@ -5,12 +5,13 @@ Mobilní webová aplikace pro jednoduchou videoanalýzu pohybu ve výuce fyziky.
 ## Aktuální pracovní postup
 
 1. Natočit nebo vybrat video.
-2. Nastavit FPS a krok mezi analyzovanými snímky.
+2. Nastavit FPS, krok mezi analyzovanými snímky a případně jen vybraný časový úsek.
 3. Kalibrovat měřítko dvěma body známé vzdálenosti.
 4. Polohu tělesa označovat ručně nebo použít automatické sledování objektu.
 5. Volitelně nastavit vlastní počátek a natočení souřadnicové soustavy.
-6. Zobrazit polohu, rychlost, zrychlení, trajektorii a vektory přímo přes video.
-7. Exportovat data do CSV.
+6. Projít naměřené body jeden po druhém a ručně opravit chybně nalezené body.
+7. Zobrazit polohu, rychlost, zrychlení, trajektorii a vektory přímo přes video.
+8. Exportovat data do CSV.
 
 ## Ovládání na telefonu
 
@@ -37,7 +38,19 @@ Aplikace zobrazuje **shodu** nalezeného obrazu s označeným vzorem. Výchozí 
 
 Tracker při hledání používá předchozí polohu i poslední směr pohybu. Při dobré shodě se vzor objektu mírně průběžně aktualizuje, aby zvládl menší změny vzhledu.
 
-První verze je nejvhodnější pro výrazné objekty, které se mezi snímky výrazně nemění: barevný míček, vozík, značka na tělese apod. Rychlé otáčení, velká změna velikosti, zakrytí nebo objekt velmi podobný pozadí mohou vyžadovat nové ruční označení.
+První verze je nejvhodnější pro výrazné objekty, které se mezi snímky výrazně nemění: barevný míček, vozík, značka na tělese apod. Rychlé otáčení, velká změna velikosti, zakrytí nebo rozmazání mohou vyžadovat ruční opravu.
+
+## Kontrola bod po bodu
+
+V části **Pohyb** je blok **Kontrola bod po bodu**.
+
+- Tlačítky **Předchozí** a **Další** lze postupně procházet všechny body ve zvoleném měřeném úseku.
+- Aplikace vždy skočí přesně na snímek daného bodu.
+- Bod vytvořený automatikou lze normálně prstem chytit a přesunout.
+- Ručně opravený automatický bod je označen jako **ručně opravený**.
+- U vybraného bodu se zobrazí `x`, `y`, `vx`, `vy` a velikost rychlosti `|v|`.
+
+To umožňuje opravit jednotlivé snímky, ve kterých je rychlý nebo rozmazaný objekt automatickým trackerem určen nepřesně.
 
 ## Souřadnicová soustava
 
@@ -52,15 +65,24 @@ V části **Pohyb** lze zapnout vlastní souřadnicovou soustavu.
 
 To je praktické například pro pohyb na nakloněné rovině: osu `x` lze natočit podél roviny.
 
+## Rychlost se znaménkem
+
+Aplikace rozlišuje mezi velikostí rychlosti a jejími složkami:
+
+- `|v| = sqrt(vx² + vy²)` je velikost rychlosti a je vždy nezáporná,
+- `vx` a `vy` mohou být kladné i záporné podle směru pohybu vzhledem ke zvoleným osám.
+
+Pokud se těleso pohybuje proti kladnému směru osy `x`, zobrazí se například `vx = -1,2 m/s`. V souhrnu pohybu se proto kromě dráhy/času zobrazuje také průměrná `vx` a `vy` se znaménkem.
+
 ## Grafy a výpočty
 
 Aplikace počítá:
 
 - `x(t)`, `y(t)`
 - `vx(t)`, `vy(t)`
-- celkovou rychlost `v(t) = sqrt(vx² + vy²)`
+- velikost rychlosti `|v|(t) = sqrt(vx² + vy²)`
 - `ax(t)`, `ay(t)`
-- celkové zrychlení `a(t) = sqrt(ax² + ay²)`
+- velikost zrychlení `|a|(t) = sqrt(ax² + ay²)`
 - trajektorii `y(x)`
 
 Rychlosti se určují z časových diferencí polohy; ve vnitřních bodech se používá centrální diference. Zrychlení se stejným způsobem počítá z rychlosti. Pro smysluplné zrychlení jsou potřeba alespoň tři body.
@@ -84,6 +106,8 @@ Směr šipky odpovídá skutečnému směru v obraze. Délka je úměrná veliko
 - `styles.css` – responzivní mobilní vzhled a dotykové ovládání
 - `app.js` – video, zoom/pan, kalibrace, ruční a automatický tracking, fyzikální výpočty, vektory a grafy
 - `coordinates.js` – vlastní počátek, natočení os a transformace dat do zvolené soustavy
+- `segment.js` – výběr měřeného úseku, rozpoznání začátku pohybu a souhrn pohybu
+- `point-review.js` – procházení bodů, ruční opravy automatických bodů a rychlost se znaménkem
 - `manifest.webmanifest` – PWA metadata
 - `sw.js` – offline cache
 - `icon.svg` – ikona aplikace
