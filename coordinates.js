@@ -156,6 +156,55 @@
     });
   };
 
+  const originalDrawVectorOverlays = drawVectorOverlays;
+  drawVectorOverlays = function drawVectorOverlaysWithCoordinates() {
+    if (!state.coordinates.enabled) {
+      originalDrawVectorOverlays();
+      return;
+    }
+    if ((state.stage !== 'track' && state.stage !== 'graphs') || state.trackPoints.length < 2) return;
+    if (!state.vectors.velocity && !state.vectors.acceleration) return;
+
+    const basis = coordinateBasis();
+    if (!basis) {
+      originalDrawVectorOverlays();
+      return;
+    }
+
+    const points = kinematicsPoints();
+    const scales = vectorPixelScales(points);
+    const indices = state.vectors.mode === 'all'
+      ? points.map((_, index) => index)
+      : [nearestKinematicIndex(points)].filter((index) => index >= 0);
+
+    indices.forEach((index) => {
+      const point = points[index];
+      const origin = videoToCanvasPoint(point);
+      const current = Math.abs(point.t - video.currentTime) <= Math.max(0.55 / fps(), 0.55 * frameStep() / fps());
+      const width = state.vectors.mode === 'all' && !current ? 2.2 : 3.2;
+
+      if (state.vectors.velocity && scales.velocity && Number.isFinite(point.vx) && Number.isFinite(point.vy)) {
+        const screenVx = point.vx * basis.ux + point.vy * basis.yx;
+        const screenVy = point.vx * basis.uy + point.vy * basis.yy;
+        drawArrow(origin, screenVx * scales.velocity, screenVy * scales.velocity, {
+          color: '#12b76a',
+          lineWidth: width,
+          label: state.vectors.mode === 'current' || current ? 'v⃗' : ''
+        });
+      }
+
+      if (state.vectors.acceleration && scales.acceleration && Number.isFinite(point.ax) && Number.isFinite(point.ay)) {
+        const screenAx = point.ax * basis.ux + point.ay * basis.yx;
+        const screenAy = point.ax * basis.uy + point.ay * basis.yy;
+        drawArrow(origin, screenAx * scales.acceleration, screenAy * scales.acceleration, {
+          color: '#d92d20',
+          lineWidth: width,
+          label: state.vectors.mode === 'current' || current ? 'a⃗' : ''
+        });
+      }
+    });
+  };
+
   function drawAxisArrow(from, to, color, label) {
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
     const head = 10;
