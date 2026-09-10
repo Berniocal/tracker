@@ -8,8 +8,9 @@ Mobilní webová aplikace pro jednoduchou videoanalýzu pohybu ve výuce fyziky.
 2. Nastavit FPS a krok mezi analyzovanými snímky.
 3. Kalibrovat měřítko dvěma body známé vzdálenosti.
 4. Polohu tělesa označovat ručně nebo použít automatické sledování objektu.
-5. Zobrazit polohu, rychlost, zrychlení, trajektorii a vektory přímo přes video.
-6. Exportovat data do CSV.
+5. Volitelně nastavit vlastní počátek a natočení souřadnicové soustavy.
+6. Zobrazit polohu, rychlost, zrychlení, trajektorii a vektory přímo přes video.
+7. Exportovat data do CSV.
 
 ## Ovládání na telefonu
 
@@ -38,6 +39,19 @@ Tracker při hledání používá předchozí polohu i poslední směr pohybu. P
 
 První verze je nejvhodnější pro výrazné objekty, které se mezi snímky výrazně nemění: barevný míček, vozík, značka na tělese apod. Rychlé otáčení, velká změna velikosti, zakrytí nebo objekt velmi podobný pozadí mohou vyžadovat nové ruční označení.
 
+## Souřadnicová soustava
+
+V části **Pohyb** lze zapnout vlastní souřadnicovou soustavu.
+
+- Výchozí režim zůstává stejný jako dosud: počátek je v prvním naměřeném bodě, osa `x` míří doprava a osa `y` nahoru.
+- Tlačítkem **Nastavit osy** se zobrazí počátek `O`, osa `x` a kolmá osa `y`.
+- Počátek lze táhnout; spolu s ním se přesune celá soustava bez změny natočení.
+- Koncový bod osy `x` lze táhnout a tím soustavu otáčet. Osa `y` zůstává vždy kolmá.
+- Po změně os se okamžitě přepočítají `x`, `y`, složky rychlosti a zrychlení, grafy i CSV data.
+- Vektory rychlosti a zrychlení se ve videu dál kreslí ve skutečném směru pohybu, i když jsou jejich složky počítané v natočených osách.
+
+To je praktické například pro pohyb na nakloněné rovině: osu `x` lze natočit podél roviny.
+
 ## Grafy a výpočty
 
 Aplikace počítá:
@@ -62,13 +76,14 @@ V části Pohyb lze zapnout:
 - zobrazení pouze u aktuálního bodu nebo u všech naměřených bodů,
 - ruční zvětšení či zmenšení délky šipek.
 
-Směr šipky odpovídá složkám vektoru. Délka je úměrná velikosti veličiny. Aplikace automaticky volí grafické měřítko podle naměřených dat.
+Směr šipky odpovídá skutečnému směru v obraze. Délka je úměrná velikosti veličiny. Aplikace automaticky volí grafické měřítko podle naměřených dat.
 
 ## Soubory
 
 - `index.html` – struktura aplikace
 - `styles.css` – responzivní mobilní vzhled a dotykové ovládání
 - `app.js` – video, zoom/pan, kalibrace, ruční a automatický tracking, fyzikální výpočty, vektory a grafy
+- `coordinates.js` – vlastní počátek, natočení os a transformace dat do zvolené soustavy
 - `manifest.webmanifest` – PWA metadata
 - `sw.js` – offline cache
 - `icon.svg` – ikona aplikace
@@ -76,7 +91,6 @@ Směr šipky odpovídá složkám vektoru. Délka je úměrná velikosti veliči
 ## Další plánované kroky
 
 - lupa při přesném posouvání bodu,
-- nastavitelný počátek a natočení souřadnic,
 - vyhlazení dat před derivováním,
 - odolnější automatický tracker pro rotaci, změnu velikosti a krátké zakrytí objektu,
 - přednastavené školní pokusy (volný pád, šikmý vrh, pohyb po kružnici apod.).
