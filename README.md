@@ -8,7 +8,7 @@ Mobilní webová aplikace pro jednoduchou videoanalýzu pohybu ve výuce fyziky.
 2. Nastavit FPS a krok mezi analyzovanými snímky.
 3. Kalibrovat měřítko dvěma body známé vzdálenosti.
 4. Ručně označovat polohu sledovaného tělesa v jednotlivých snímcích.
-5. Zobrazit polohu, rychlost, zrychlení a trajektorii.
+5. Zobrazit polohu, rychlost, zrychlení, trajektorii a vektory přímo přes video.
 6. Exportovat data do CSV.
 
 ## Ovládání na telefonu
@@ -35,11 +35,22 @@ Rychlosti se určují z časových diferencí polohy; ve vnitřních bodech se p
 
 CSV export obsahuje čas, polohu, složky rychlosti, velikost rychlosti, složky zrychlení a velikost zrychlení.
 
+## Vektory přes video
+
+V části Pohyb lze zapnout:
+
+- zelený vektor rychlosti `v⃗`,
+- červený vektor zrychlení `a⃗`,
+- zobrazení pouze u aktuálního bodu nebo u všech naměřených bodů,
+- ruční zvětšení či zmenšení délky šipek.
+
+Směr šipky odpovídá složkám vektoru. Délka je úměrná velikosti veličiny. Aplikace automaticky volí grafické měřítko podle naměřených dat a zobrazuje použitý přepočet v pixelech.
+
 ## Soubory
 
 - `index.html` – struktura aplikace
 - `styles.css` – responzivní mobilní vzhled a dotykové ovládání
-- `app.js` – video, zoom/pan, kalibrace, tracking, fyzikální výpočty a grafy
+- `app.js` – video, zoom/pan, kalibrace, tracking, fyzikální výpočty, vektory a grafy
 - `manifest.webmanifest` – PWA metadata
 - `sw.js` – offline cache
 - `icon.svg` – ikona aplikace
@@ -50,7 +61,6 @@ CSV export obsahuje čas, polohu, složky rychlosti, velikost rychlosti, složky
 - nastavitelný počátek a natočení souřadnic,
 - vyhlazení dat před derivováním,
 - automatické sledování označeného objektu s možností ruční opravy,
-- vektory rychlosti a zrychlení přímo ve videu,
 - přednastavené školní pokusy (volný pád, šikmý vrh, pohyb po kružnici apod.).
 
 Aplikace je navržená jako PWA a video se zpracovává lokálně v zařízení.
