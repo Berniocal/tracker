@@ -1,1 +1,142 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101828">
+  <meta name="description" content="Jednoduchá mobilní videoanalýza pohybu pro výuku fyziky.">
+  <title>Tracker Mobile</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Videoanalýza pohybu</p>
+        <h1>Tracker Mobile</h1>
+      </div>
+      <button id="resetBtn" class="icon-btn" type="button" aria-label="Nové měření" title="Nové měření">↻</button>
+    </header>
 
+    <nav class="steps" aria-label="Postup měření">
+      <button class="step active" data-stage="video" type="button"><span>1</span>Video</button>
+      <button class="step" data-stage="scale" type="button"><span>2</span>Měřítko</button>
+      <button class="step" data-stage="track" type="button"><span>3</span>Pohyb</button>
+      <button class="step" data-stage="graphs" type="button"><span>4</span>Grafy</button>
+    </nav>
+
+    <section id="emptyState" class="empty-state card">
+      <div class="hero-icon">●</div>
+      <h2>Začni videem</h2>
+      <p>Natoč krátký pokus nebo vyber video z telefonu. Video se zpracovává pouze v tomto zařízení.</p>
+      <div class="file-actions">
+        <label class="primary-btn file-btn">📷 Natočit video
+          <input id="cameraInput" type="file" accept="video/*" capture="environment">
+        </label>
+        <label class="secondary-btn file-btn">📁 Vybrat video
+          <input id="fileInput" type="file" accept="video/*">
+        </label>
+      </div>
+    </section>
+
+    <section id="workspace" class="workspace hidden">
+      <div class="video-card card">
+        <div id="videoViewport" class="video-viewport">
+          <video id="video" playsinline preload="metadata"></video>
+          <canvas id="overlay"></canvas>
+          <div id="tapHint" class="tap-hint hidden"></div>
+        </div>
+
+        <div class="time-readout">
+          <strong id="timeLabel">0,000 s</strong>
+          <span id="frameLabel">snímek 0</span>
+        </div>
+
+        <div class="transport" aria-label="Ovládání videa">
+          <button id="prevFrameBtn" type="button" aria-label="Předchozí snímek">◀</button>
+          <button id="playBtn" class="play-btn" type="button" aria-label="Přehrát nebo pozastavit">▶</button>
+          <button id="nextFrameBtn" type="button" aria-label="Další snímek">▶</button>
+        </div>
+      </div>
+
+      <section id="panelVideo" class="stage-panel card">
+        <h2>1. Video</h2>
+        <p class="muted">Vyber snímkovou frekvenci videa. Pokud si nejsi jistý, běžné video bývá 30 nebo 60 fps.</p>
+        <div class="control-grid">
+          <label>FPS
+            <input id="fpsInput" type="number" min="1" max="960" step="1" value="30" inputmode="numeric">
+          </label>
+          <label>Označovat každý
+            <select id="frameStepSelect">
+              <option value="1">1. snímek</option>
+              <option value="2">2. snímek</option>
+              <option value="5">5. snímek</option>
+              <option value="10">10. snímek</option>
+            </select>
+          </label>
+        </div>
+        <button class="primary-btn next-stage" data-next="scale" type="button">Nastavit měřítko →</button>
+      </section>
+
+      <section id="panelScale" class="stage-panel card hidden">
+        <h2>2. Měřítko</h2>
+        <p id="scaleInstruction">Klepni ve videu na první konec známé vzdálenosti.</p>
+        <div class="scale-row">
+          <label>Skutečná vzdálenost
+            <div class="unit-input">
+              <input id="scaleDistance" type="number" min="0.000001" step="any" value="1" inputmode="decimal">
+              <select id="scaleUnit">
+                <option value="1">m</option>
+                <option value="0.01">cm</option>
+                <option value="0.001">mm</option>
+              </select>
+            </div>
+          </label>
+        </div>
+        <div id="scaleResult" class="result-box hidden"></div>
+        <div class="button-row">
+          <button id="clearScaleBtn" class="secondary-btn" type="button">Znovu označit</button>
+          <button id="scaleNextBtn" class="primary-btn" type="button" disabled>Sledovat pohyb →</button>
+        </div>
+      </section>
+
+      <section id="panelTrack" class="stage-panel card hidden">
+        <div class="panel-heading">
+          <div>
+            <h2>3. Pohyb</h2>
+            <p class="muted">Klepni na sledované těleso. Bod se uloží a video automaticky přeskočí o zvolený počet snímků.</p>
+          </div>
+          <span id="pointCount" class="badge">0 bodů</span>
+        </div>
+        <div class="track-actions">
+          <button id="undoPointBtn" class="secondary-btn" type="button" disabled>↶ Zpět o bod</button>
+          <button id="clearPointsBtn" class="secondary-btn" type="button" disabled>Vymazat body</button>
+        </div>
+        <div id="latestPoint" class="result-box hidden"></div>
+        <button id="graphsBtn" class="primary-btn" type="button" disabled>Zobrazit grafy →</button>
+      </section>
+
+      <section id="panelGraphs" class="stage-panel card hidden">
+        <div class="panel-heading">
+          <div>
+            <h2>4. Grafy</h2>
+            <p class="muted">Souřadnice jsou vztažené k prvnímu označenému bodu; osa y míří nahoru.</p>
+          </div>
+          <button id="exportBtn" class="secondary-btn small" type="button">CSV</button>
+        </div>
+        <div class="graph-tabs" role="tablist">
+          <button class="graph-tab active" data-graph="x" type="button">x(t)</button>
+          <button class="graph-tab" data-graph="y" type="button">y(t)</button>
+          <button class="graph-tab" data-graph="xy" type="button">y(x)</button>
+        </div>
+        <div class="chart-wrap"><canvas id="chart"></canvas></div>
+        <div id="graphStats" class="stats-grid"></div>
+      </section>
+    </section>
+  </main>
+
+  <template id="toastTemplate"><div class="toast"></div></template>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
