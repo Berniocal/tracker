@@ -1,4 +1,4 @@
-const CACHE = 'tracker-mobile-v2';
+const CACHE = 'tracker-mobile-v3';
 const APP_SHELL = [
   './',
   './index.html',
