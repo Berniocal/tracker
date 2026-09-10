@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#101828">
   <meta name="description" content="Jednoduchá mobilní videoanalýza pohybu pro výuku fyziky.">
   <title>Tracker Mobile</title>
@@ -46,7 +46,16 @@
           <video id="video" playsinline preload="metadata"></video>
           <canvas id="overlay"></canvas>
           <div id="tapHint" class="tap-hint hidden"></div>
+
+          <div class="zoom-controls" aria-label="Přiblížení videa">
+            <button id="zoomOutBtn" type="button" aria-label="Oddálit">−</button>
+            <button id="zoomLabel" class="zoom-label" type="button" aria-label="Vrátit výchozí přiblížení">1×</button>
+            <button id="zoomInBtn" type="button" aria-label="Přiblížit">+</button>
+            <button id="zoomResetBtn" class="zoom-reset" type="button">Celé</button>
+          </div>
         </div>
+
+        <div class="gesture-hint">Dva prsty: přiblížení a posun • body lze táhnout</div>
 
         <div class="time-readout">
           <strong id="timeLabel">0,000 s</strong>
@@ -82,6 +91,7 @@
       <section id="panelScale" class="stage-panel card hidden">
         <h2>2. Měřítko</h2>
         <p id="scaleInstruction">Klepni ve videu na první konec známé vzdálenosti.</p>
+        <p class="micro-help">Pro přesné označení video přibliž dvěma prsty. Oranžové body můžeš kdykoliv znovu chytit a posunout.</p>
         <div class="scale-row">
           <label>Skutečná vzdálenost
             <div class="unit-input">
@@ -109,6 +119,7 @@
           </div>
           <span id="pointCount" class="badge">0 bodů</span>
         </div>
+        <p class="micro-help">Modrý bod můžeš chytit a opravit. Klepnutí na existující bod nepřidá nový bod, ale vybere ho.</p>
         <div class="track-actions">
           <button id="undoPointBtn" class="secondary-btn" type="button" disabled>↶ Zpět o bod</button>
           <button id="clearPointsBtn" class="secondary-btn" type="button" disabled>Vymazat body</button>
@@ -121,17 +132,26 @@
         <div class="panel-heading">
           <div>
             <h2>4. Grafy</h2>
-            <p class="muted">Souřadnice jsou vztažené k prvnímu označenému bodu; osa y míří nahoru.</p>
+            <p class="muted">Osa y míří nahoru. Rychlost a zrychlení se počítají z časového průběhu naměřených bodů.</p>
           </div>
           <button id="exportBtn" class="secondary-btn small" type="button">CSV</button>
         </div>
-        <div class="graph-tabs" role="tablist">
+
+        <div class="graph-tabs" role="tablist" aria-label="Výběr grafu">
           <button class="graph-tab active" data-graph="x" type="button">x(t)</button>
           <button class="graph-tab" data-graph="y" type="button">y(t)</button>
+          <button class="graph-tab" data-graph="vx" type="button">vₓ(t)</button>
+          <button class="graph-tab" data-graph="vy" type="button">vᵧ(t)</button>
+          <button class="graph-tab" data-graph="v" type="button">v(t)</button>
+          <button class="graph-tab" data-graph="ax" type="button">aₓ(t)</button>
+          <button class="graph-tab" data-graph="ay" type="button">aᵧ(t)</button>
+          <button class="graph-tab" data-graph="a" type="button">a(t)</button>
           <button class="graph-tab" data-graph="xy" type="button">y(x)</button>
         </div>
+
         <div class="chart-wrap"><canvas id="chart"></canvas></div>
         <div id="graphStats" class="stats-grid"></div>
+        <p class="micro-help graph-help">Celková rychlost je <strong>v = √(vₓ² + vᵧ²)</strong>, takže funguje i pro šikmý pohyb.</p>
       </section>
     </section>
   </main>
