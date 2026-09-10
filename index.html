@@ -142,16 +142,16 @@
           <button class="graph-tab" data-graph="y" type="button">y(t)</button>
           <button class="graph-tab" data-graph="vx" type="button">vₓ(t)</button>
           <button class="graph-tab" data-graph="vy" type="button">vᵧ(t)</button>
-          <button class="graph-tab" data-graph="v" type="button">v(t)</button>
+          <button class="graph-tab" data-graph="v" type="button">|v|(t)</button>
           <button class="graph-tab" data-graph="ax" type="button">aₓ(t)</button>
           <button class="graph-tab" data-graph="ay" type="button">aᵧ(t)</button>
-          <button class="graph-tab" data-graph="a" type="button">a(t)</button>
+          <button class="graph-tab" data-graph="a" type="button">|a|(t)</button>
           <button class="graph-tab" data-graph="xy" type="button">y(x)</button>
         </div>
 
         <div class="chart-wrap"><canvas id="chart"></canvas></div>
         <div id="graphStats" class="stats-grid"></div>
-        <p class="micro-help graph-help">Celková rychlost je <strong>v = √(vₓ² + vᵧ²)</strong>, takže funguje i pro šikmý pohyb.</p>
+        <p class="micro-help graph-help">Velikost rychlosti <strong>|v| = √(vₓ² + vᵧ²)</strong> je vždy nezáporná. Složky <strong>vₓ</strong> a <strong>vᵧ</strong> mohou být kladné i záporné podle směru pohybu.</p>
       </section>
     </section>
   </main>
@@ -160,5 +160,6 @@
   <script src="app.js"></script>
   <script src="coordinates.js"></script>
   <script src="segment.js"></script>
+  <script src="point-review.js"></script>
 </body>
 </html>
