@@ -1,0 +1,19 @@
+{
+  "name": "Tracker Mobile",
+  "short_name": "Tracker",
+  "description": "Jednoduchá mobilní videoanalýza pohybu pro výuku fyziky.",
+  "lang": "cs",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f4f7",
+  "theme_color": "#101828",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
