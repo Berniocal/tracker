@@ -120,6 +120,9 @@
   $('#fpsInput')?.addEventListener('input', appendAverageAcceleration);
   $('#frameStepSelect')?.addEventListener('change', appendAverageAcceleration);
   $('#segmentEnabled')?.addEventListener('change', appendAverageAcceleration);
+  $('#setSegmentStartBtn')?.addEventListener('click', appendAverageAcceleration);
+  $('#setSegmentEndBtn')?.addEventListener('click', appendAverageAcceleration);
+  $('#wholeVideoBtn')?.addEventListener('click', appendAverageAcceleration);
 
   appendAverageAcceleration();
 })();
