@@ -1,6 +1,7 @@
 (() => {
   let dragGesture = null;
   const hitRadius = 28;
+  const editHistory = new Map();
 
   function activeReviewIndex() {
     if (state.review && Number.isFinite(state.review.frame)) {
@@ -11,6 +12,11 @@
       return state.selected.index;
     }
     return -1;
+  }
+
+  function activeReviewFrame() {
+    const index = activeReviewIndex();
+    return index >= 0 ? state.trackPoints[index]?.frame ?? null : null;
   }
 
   function trackPointDistance(index, clientX, clientY) {
@@ -40,6 +46,77 @@
     pendingTap = null;
     activeDrag = null;
     drawOverlay();
+  }
+
+  function pushHistory(frame) {
+    const point = state.trackPoints.find((item) => item.frame === frame);
+    if (!point) return;
+    const history = editHistory.get(frame) || [];
+    history.push({ ...point });
+    editHistory.set(frame, history.slice(-20));
+    updateUndoEditButton();
+  }
+
+  function installUndoEditButton() {
+    const review = $('#pointReview');
+    if (!review || $('#undoPointEditBtn')) return;
+
+    const button = document.createElement('button');
+    button.id = 'undoPointEditBtn';
+    button.type = 'button';
+    button.className = 'secondary-btn undo-point-edit';
+    button.textContent = '↶ Vrátit poslední úpravu bodu';
+    button.disabled = true;
+
+    const detail = $('#reviewPointDetail');
+    if (detail) detail.insertAdjacentElement('afterend', button);
+    else review.append(button);
+
+    if (!$('#undoPointEditStyles')) {
+      const style = document.createElement('style');
+      style.id = 'undoPointEditStyles';
+      style.textContent = `
+        .undo-point-edit{width:100%;margin-top:8px;min-height:42px;padding:8px 10px;font-size:.78rem}
+      `;
+      document.head.append(style);
+    }
+
+    button.addEventListener('click', undoLastPointEdit);
+  }
+
+  function updateUndoEditButton() {
+    const button = $('#undoPointEditBtn');
+    if (!button) return;
+    const frame = activeReviewFrame();
+    const count = frame == null ? 0 : (editHistory.get(frame)?.length || 0);
+    button.disabled = count === 0 || state.auto.status === 'running';
+    button.textContent = count > 1
+      ? `↶ Vrátit poslední úpravu bodu (${count})`
+      : '↶ Vrátit poslední úpravu bodu';
+  }
+
+  function undoLastPointEdit() {
+    if (state.auto.status === 'running') return;
+    const frame = activeReviewFrame();
+    if (frame == null) return;
+    const history = editHistory.get(frame);
+    if (!history?.length) return;
+
+    const snapshot = history.pop();
+    if (!history.length) editHistory.delete(frame);
+
+    const index = state.trackPoints.findIndex((point) => point.frame === frame);
+    if (index < 0) return;
+
+    state.trackPoints[index] = { ...snapshot };
+    state.selected = { kind: 'track', index };
+    if (state.review) state.review.frame = frame;
+
+    updateTrackingUi();
+    if (state.stage === 'graphs') drawChart();
+    drawOverlay();
+    updateUndoEditButton();
+    toast('Poslední ruční úprava bodu byla vrácena.');
   }
 
   function beginTrackPointDrag(event) {
@@ -76,16 +153,17 @@
           startX: canvasPoint.x,
           startY: canvasPoint.y,
           frame: trackPoint.frame,
-          moved: false
+          moved: false,
+          historySaved: false
         };
 
         video.pause();
         drawOverlay();
+        updateUndoEditButton();
         return;
       }
 
       // Pokud uživatel sáhne na jiný viditelný bod, nic se nestane.
-      // Tím se zabrání nechtěné opravě sousedního snímku.
       const nearest = nearestTrackPoint(event.clientX, event.clientY);
       if (nearest.index >= 0 && nearest.distance <= hitRadius) {
         blockInactiveTrackPoint(event);
@@ -122,17 +200,24 @@
       startX: canvasPoint.x,
       startY: canvasPoint.y,
       frame: trackPoint.frame,
-      moved: false
+      moved: false,
+      historySaved: false
     };
 
     video.pause();
     drawOverlay();
+    updateUndoEditButton();
   }
 
   function watchTrackPointDrag(event) {
     if (!dragGesture || dragGesture.pointerId !== event.pointerId) return;
     const point = canvasCoordinates(event.clientX, event.clientY);
-    if (Math.hypot(point.x - dragGesture.startX, point.y - dragGesture.startY) > 3) {
+    const distance = Math.hypot(point.x - dragGesture.startX, point.y - dragGesture.startY);
+    if (distance > 3) {
+      if (!dragGesture.historySaved) {
+        pushHistory(dragGesture.frame);
+        dragGesture.historySaved = true;
+      }
       dragGesture.moved = true;
     }
   }
@@ -143,26 +228,58 @@
     const gesture = dragGesture;
     dragGesture = null;
 
-    if (cancelled || gesture.moved) return;
+    if (cancelled) {
+      if (gesture.historySaved) undoLastPointEdit();
+      return;
+    }
+
+    if (gesture.moved) {
+      updateUndoEditButton();
+      return;
+    }
 
     const point = state.trackPoints.find((item) => item.frame === gesture.frame);
     if (!point) return;
 
     // Obyčejné klepnutí na aktivní bod stále funguje jako navigace na jeho snímek.
-    // Pokud už na daném snímku jsme, znovu neseekujeme – tím se vyhneme
-    // posunu o sousední dekódovaný snímek u některých mobilních videí.
+    // Pokud už na daném snímku jsme, znovu neseekujeme.
     if (Math.abs(video.currentTime - point.t) > 0.35 / fps()) {
       video.currentTime = point.t;
     }
+    updateUndoEditButton();
+  }
+
+  function cleanHistory() {
+    const existingFrames = new Set(state.trackPoints.map((point) => point.frame));
+    [...editHistory.keys()].forEach((frame) => {
+      if (!existingFrames.has(frame)) editHistory.delete(frame);
+    });
+    updateUndoEditButton();
   }
 
   const reviewHelp = document.querySelector('#pointReview .micro-help');
   if (reviewHelp) {
-    reviewHelp.textContent = 'Projdi body tlačítky Předchozí a Další. Přesunout lze vždy jen právě zvýrazněný aktivní bod.';
+    reviewHelp.textContent = 'Projdi body tlačítky Předchozí a Další. Přesunout lze vždy jen aktivní bod; poslední ruční úpravu můžeš vrátit.';
   }
+
+  installUndoEditButton();
 
   overlay.addEventListener('pointerdown', beginTrackPointDrag, true);
   overlay.addEventListener('pointermove', watchTrackPointDrag, true);
   overlay.addEventListener('pointerup', (event) => finishTrackPointDrag(event, false), true);
   overlay.addEventListener('pointercancel', (event) => finishTrackPointDrag(event, true), true);
+
+  video.addEventListener('seeked', updateUndoEditButton);
+  $('#prevMeasuredPointBtn')?.addEventListener('click', () => requestAnimationFrame(updateUndoEditButton));
+  $('#nextMeasuredPointBtn')?.addEventListener('click', () => requestAnimationFrame(updateUndoEditButton));
+  $('#undoPointBtn')?.addEventListener('click', () => requestAnimationFrame(cleanHistory));
+  $('#clearPointsBtn')?.addEventListener('click', () => {
+    editHistory.clear();
+    requestAnimationFrame(updateUndoEditButton);
+  });
+  $('#cameraInput')?.addEventListener('change', () => editHistory.clear());
+  $('#fileInput')?.addEventListener('change', () => editHistory.clear());
+  $('#resetBtn')?.addEventListener('click', () => editHistory.clear());
+
+  updateUndoEditButton();
 })();
