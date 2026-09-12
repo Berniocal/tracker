@@ -27,8 +27,29 @@
     const height = chart.parentElement?.clientHeight || 0;
     if (!width || !height) return null;
 
-    const xs = data.map((item) => item.x);
-    const ys = data.map((item) => item.y);
+    let seriesKeys = Array.isArray(state.graphSeries) && state.graphSeries.length ? state.graphSeries : [state.graph];
+    const compatibleConfigs = seriesKeys
+      .map((key) => graphConfigs[key])
+      .filter((seriesConfig) => seriesConfig && seriesConfig.xKey === config.xKey);
+    if (!compatibleConfigs.length) compatibleConfigs.push(config);
+
+    const xs = [];
+    const ys = [];
+    points.forEach((point) => {
+      const x = point[config.xKey];
+      if (!Number.isFinite(x)) return;
+      let hasSeriesValue = false;
+      compatibleConfigs.forEach((seriesConfig) => {
+        const y = point[seriesConfig.yKey];
+        if (Number.isFinite(y)) {
+          ys.push(y);
+          hasSeriesValue = true;
+        }
+      });
+      if (hasSeriesValue) xs.push(x);
+    });
+
+    if (xs.length < 2 || ys.length < 2) return null;
     const [xmin, xmax] = extent(xs);
     const [ymin, ymax] = extent(ys);
     const margin = { l: 56, r: 18, t: 18, b: 46 };
