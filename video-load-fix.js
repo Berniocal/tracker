@@ -146,8 +146,10 @@
         if (attempt !== loadAttempt) return;
         if (video.videoWidth > 0 && video.videoHeight > 0 && video.readyState >= 2) done(resolve);
       };
-      const failed = () => {
+      const failed = (event) => {
         if (attempt !== loadAttempt) return;
+        // Přesná diagnostika níže nahrazuje starou obecnou hlášku z app.js.
+        event?.stopImmediatePropagation?.();
         done(reject, video.error || new Error('media-error'));
       };
       const aborted = () => {
@@ -157,7 +159,6 @@
 
       video.addEventListener('loadeddata', ready);
       video.addEventListener('canplay', ready);
-      // Capture listener proběhne před starým obecným error handlerem v app.js.
       video.addEventListener('error', failed, true);
       video.addEventListener('abort', aborted);
       timer = setTimeout(() => done(reject, new Error('timeout')), timeoutMs);
@@ -165,11 +166,6 @@
       if (video.readyState >= 2 && video.videoWidth > 0) ready();
     });
   }
-
-  // Potlačí původní obecnou hlášku „zkus jiný formát“ a nechá zobrazit přesnější diagnostiku níže.
-  video.addEventListener('error', (event) => {
-    if (state.videoUrl) event.stopImmediatePropagation();
-  }, true);
 
   loadVideo = async function loadVideoRobust(file) {
     if (!file) return;
