@@ -57,11 +57,12 @@
       .graph-scroll-shell{width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;border-radius:10px}
       .graph-scroll-shell .chart-wrap{aspect-ratio:auto!important;height:clamp(260px,82vw,340px);min-height:260px;flex:0 0 auto}
       .graph-scroll-shell.expanded #chart{touch-action:pan-x pan-y}
-      .graph-view-controls{display:grid;grid-template-columns:1fr auto 1fr;gap:7px;align-items:center;margin:8px 0 2px}
+      .graph-range-control{margin:7px 0 3px;padding:4px 10px 5px;border:1px solid #e4e7ec;border-radius:11px;background:#f9fafb}
+      .graph-range-control .dual-range{margin-top:0}
+      .graph-range-label{text-align:center;color:#667085;font-size:.7rem;line-height:1.2;margin-top:-1px}
+      .graph-view-controls{display:grid;grid-template-columns:1fr auto 1fr;gap:7px;align-items:center;margin:5px 0 2px}
       .graph-view-controls button{min-height:40px;padding:7px 9px}
       .graph-width-label{text-align:center;font-size:.75rem;font-weight:800;color:#475467;white-space:nowrap}
-      .graph-range-control{margin:4px 0 8px;padding:9px 10px;border:1px solid #e4e7ec;border-radius:11px;background:#f9fafb}
-      .graph-range-control .dual-range{margin-top:2px}
       .range-variable-stat{grid-column:1/-1}
       .range-stat-title{display:flex!important;align-items:center;gap:6px;color:#344054!important;font-size:.78rem!important;font-weight:800}
       .range-stat-dot{display:inline-block;width:9px;height:9px;border-radius:50%}
@@ -72,8 +73,9 @@
       @media(max-width:600px){
         .compact-range-control{padding:2px 10px 6px}.compact-range-head{font-size:.68rem}.compact-range-head strong{font-size:.72rem}
         .dual-range{height:31px}.dual-range::before{top:13px}.dual-range input[type=range]{height:31px}
+        .graph-range-control{padding:3px 8px 4px}.graph-range-label{font-size:.66rem}
         .graph-view-controls{gap:5px}.graph-view-controls button{min-height:36px;padding:6px 7px;font-size:.71rem}.graph-width-label{font-size:.68rem}
-        .graph-range-control{padding:7px 8px}.range-stat-values{gap:5px}.range-stat-values div{padding:5px 6px}.range-stat-values b{font-size:.72rem}
+        .range-stat-values{gap:5px}.range-stat-values div{padding:5px 6px}.range-stat-values b{font-size:.72rem}
       }
     `;
     document.head.append(style);
@@ -167,6 +169,47 @@
     setTrackFill(root, start, end, 0, duration);
   }
 
+  function seekVideoTo(time) {
+    const duration = durationValue();
+    const target = clamp(Number(time) || 0, 0, duration || 0);
+    return new Promise((resolve) => {
+      video.pause();
+      if (Math.abs(video.currentTime - target) <= 0.25 / fps()) {
+        video.currentTime = target;
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+        return;
+      }
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        video.removeEventListener('seeked', finish);
+        resolve();
+      };
+      video.addEventListener('seeked', finish, { once: true });
+      video.currentTime = target;
+      setTimeout(finish, 800);
+    });
+  }
+
+  function installAutoSelectionStartGuard() {
+    const button = $('#selectAutoObjectBtn');
+    if (!button || button.dataset.segmentStartGuard === '1') return;
+    button.dataset.segmentStartGuard = '1';
+
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (state.auto.status === 'running') return;
+
+      const start = clamp(Number(state.segment?.start) || 0, 0, durationValue() || 0);
+      await seekVideoTo(start);
+      updateTimeUi();
+      drawOverlay();
+      beginAutoSelection();
+    }, true);
+  }
+
   function graphTimeBounds() {
     const points = kinematicsPoints().filter((point) => Number.isFinite(point.dt));
     if (!points.length) return null;
@@ -197,20 +240,17 @@
     const controls = document.createElement('div');
     controls.id = 'graphViewControls';
     controls.innerHTML = `
-      <div class="graph-view-controls">
-        <button id="graphNarrowBtn" class="secondary-btn" type="button" aria-label="Zúžit graf">→ ← Zúžit</button>
-        <span id="graphWidthLabel" class="graph-width-label">1×</span>
-        <button id="graphWidenBtn" class="secondary-btn" type="button" aria-label="Roztáhnout graf">← → Roztáhnout</button>
-      </div>
       <div id="graphRangeControls" class="graph-range-control">
-        <div class="compact-range-head">
-          <strong>Statistický úsek</strong>
-          <span id="graphRangeLabel">celý graf</span>
-        </div>
         <div id="graphDualRange" class="dual-range">
           <input id="graphRangeStart" type="range" min="0" max="1" step="0.001" value="0" aria-label="Začátek statistického úseku">
           <input id="graphRangeEnd" type="range" min="0" max="1" step="0.001" value="1" aria-label="Konec statistického úseku">
         </div>
+        <div id="graphRangeLabel" class="graph-range-label">celý graf</div>
+      </div>
+      <div class="graph-view-controls">
+        <button id="graphNarrowBtn" class="secondary-btn" type="button" aria-label="Zúžit graf">→ ← Zúžit</button>
+        <span id="graphWidthLabel" class="graph-width-label">1×</span>
+        <button id="graphWidenBtn" class="secondary-btn" type="button" aria-label="Roztáhnout graf">← → Roztáhnout</button>
       </div>
     `;
     shell.insertAdjacentElement('afterend', controls);
@@ -303,8 +343,69 @@
     state.graphView.rangeEnd = end;
     startInput.value = String(start);
     endInput.value = String(end);
-    renderGraphRange();
-    updateGraphRangeStats();
+    drawChart();
+  }
+
+  function rangeMarkerPositions() {
+    const bounds = graphTimeBounds();
+    const geometry = state.graphPlotGeometry;
+    if (!bounds || !geometry || !(geometry.xmax > geometry.xmin)) return null;
+
+    const start = clamp(Number.isFinite(state.graphView.rangeStart) ? state.graphView.rangeStart : bounds.min, bounds.min, bounds.max);
+    const end = clamp(Number.isFinite(state.graphView.rangeEnd) ? state.graphView.rangeEnd : bounds.max, start, bounds.max);
+
+    if (geometry.xKey === 'dt') return { startValue: start, endValue: end };
+
+    if (geometry.xKey === 'xm') {
+      const nearest = (time) => bounds.points.reduce((best, point) => {
+        if (!best || Math.abs(point.dt - time) < Math.abs(best.dt - time)) return point;
+        return best;
+      }, null);
+      const first = nearest(start);
+      const last = nearest(end);
+      if (!first || !last || !Number.isFinite(first.xm) || !Number.isFinite(last.xm)) return null;
+      return { startValue: first.xm, endValue: last.xm };
+    }
+
+    return null;
+  }
+
+  function drawGraphRangeMarkers() {
+    const geometry = state.graphPlotGeometry;
+    const positions = rangeMarkerPositions();
+    if (!geometry || !positions) return;
+
+    const { margin, plotW, plotH, xmin, xmax } = geometry;
+    if (!margin || !(plotW > 0) || !(plotH > 0) || !(xmax > xmin)) return;
+
+    const px = (value) => margin.l + ((value - xmin) / (xmax - xmin)) * plotW;
+    const top = margin.t;
+    const bottom = margin.t + plotH;
+    const markers = [
+      { x: px(positions.startValue), color: '#155eef', label: 'od' },
+      { x: px(positions.endValue), color: '#7f56d9', label: 'do' }
+    ];
+
+    chartCtx.save();
+    chartCtx.font = '700 10px system-ui,sans-serif';
+    chartCtx.textAlign = 'center';
+    chartCtx.textBaseline = 'top';
+    markers.forEach((marker) => {
+      if (!Number.isFinite(marker.x)) return;
+      chartCtx.strokeStyle = marker.color;
+      chartCtx.globalAlpha = 0.78;
+      chartCtx.lineWidth = 1.8;
+      chartCtx.setLineDash([5, 4]);
+      chartCtx.beginPath();
+      chartCtx.moveTo(marker.x, top);
+      chartCtx.lineTo(marker.x, bottom);
+      chartCtx.stroke();
+      chartCtx.setLineDash([]);
+      chartCtx.globalAlpha = 0.92;
+      chartCtx.fillStyle = marker.color;
+      chartCtx.fillText(marker.label, marker.x, top + 3);
+    });
+    chartCtx.restore();
   }
 
   function statisticCard(meta, values) {
@@ -361,11 +462,13 @@
   installStyles();
   installVideoRange();
   installGraphControls();
+  installAutoSelectionStartGuard();
 
   const drawChartBeforeRanges = drawChart;
   drawChart = function drawChartWithRanges() {
     drawChartBeforeRanges();
     renderGraphRange();
+    drawGraphRangeMarkers();
     updateGraphRangeStats();
   };
 
