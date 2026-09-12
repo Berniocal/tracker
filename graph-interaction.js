@@ -27,6 +27,23 @@
     const height = chart.parentElement?.clientHeight || 0;
     if (!width || !height) return null;
 
+    const plot = state.graphPlotGeometry;
+    if (
+      plot &&
+      plot.xKey === config.xKey &&
+      Array.isArray(plot.seriesKeys) &&
+      plot.seriesKeys.includes(state.graph) &&
+      plot.scaleRanges?.[config.unit]
+    ) {
+      const range = plot.scaleRanges[config.unit];
+      const margin = plot.margin;
+      const plotW = plot.plotW;
+      const plotH = plot.plotH;
+      const px = (value) => margin.l + ((value - plot.xmin) / (plot.xmax - plot.xmin)) * plotW;
+      const py = (value) => margin.t + plotH - ((value - range.min) / (range.max - range.min)) * plotH;
+      return { config, data, width, height, margin, plotW, plotH, px, py };
+    }
+
     let seriesKeys = Array.isArray(state.graphSeries) && state.graphSeries.length ? state.graphSeries : [state.graph];
     const compatibleConfigs = seriesKeys
       .map((key) => graphConfigs[key])
