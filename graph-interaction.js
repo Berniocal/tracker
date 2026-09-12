@@ -2,12 +2,32 @@
   state.graphCursor = { frame: null };
   let graphPointerId = null;
 
+  const pointValueMeta = {
+    x:  { label: 'x',   field: 'xm', unit: 'm', signed: true },
+    y:  { label: 'y',   field: 'ym', unit: 'm', signed: true },
+    vx: { label: 'vₓ',  field: 'vx', unit: 'm/s', signed: true },
+    vy: { label: 'vᵧ',  field: 'vy', unit: 'm/s', signed: true },
+    v:  { label: '|v|', field: 'v',  unit: 'm/s', signed: false },
+    ax: { label: 'aₓ',  field: 'ax', unit: 'm/s²', signed: true },
+    ay: { label: 'aᵧ',  field: 'ay', unit: 'm/s²', signed: true },
+    a:  { label: '|a|', field: 'a',  unit: 'm/s²', signed: false }
+  };
+
   function signedGraphValue(value, digits = 3) {
     if (!Number.isFinite(value)) return '–';
     const abs = formatNumber(Math.abs(value), digits);
     if (value > 1e-10) return `+${abs}`;
     if (value < -1e-10) return `−${abs}`;
     return '0';
+  }
+
+  function selectedPointValueKeys() {
+    const selected = Array.isArray(state.graphSeries) && state.graphSeries.length
+      ? state.graphSeries
+      : [state.graph];
+
+    if (selected.includes('xy') || state.graph === 'xy') return ['x', 'y'];
+    return selected.filter((key) => pointValueMeta[key]).slice(0, 3);
   }
 
   function graphDataGeometry() {
@@ -122,20 +142,19 @@
     }
 
     const p = item.point;
+    const keys = selectedPointValueKeys();
+    const cells = keys.map((key) => {
+      const meta = pointValueMeta[key];
+      return valueCell(meta.label, p[meta.field], meta.unit, meta.signed);
+    }).join('');
+
     info.innerHTML = `
       <div class="graph-point-head">
         <strong>Snímek ${p.frame}</strong>
         <span>t = ${formatNumber(p.dt, 3)} s</span>
       </div>
-      <div class="graph-point-grid">
-        ${valueCell('x', p.xm, 'm', true)}
-        ${valueCell('y', p.ym, 'm', true)}
-        ${valueCell('vₓ', p.vx, 'm/s', true)}
-        ${valueCell('vᵧ', p.vy, 'm/s', true)}
-        ${valueCell('|v|', p.v, 'm/s')}
-        ${valueCell('aₓ', p.ax, 'm/s²', true)}
-        ${valueCell('aᵧ', p.ay, 'm/s²', true)}
-        ${valueCell('|a|', p.a, 'm/s²')}
+      <div class="graph-point-grid" data-count="${keys.length}">
+        ${cells}
       </div>
     `;
   }
@@ -215,12 +234,14 @@
         .graph-point-hint{display:block;color:#667085;font-size:.78rem;line-height:1.45}
         .graph-point-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px;font-size:.8rem;color:#475467}
         .graph-point-head strong{color:#101828;font-size:.9rem}
-        .graph-point-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+        .graph-point-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+        .graph-point-grid[data-count="1"]{grid-template-columns:1fr}
+        .graph-point-grid[data-count="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}
         .graph-point-value{padding:8px;border:1px solid #e4e7ec;border-radius:9px;background:#fff;min-width:0}
         .graph-point-value span{display:block;color:#667085;font-size:.67rem;margin-bottom:2px}
         .graph-point-value strong{display:block;color:#101828;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .graph-point-value strong.negative{color:#b42318}.graph-point-value strong.positive{color:#067647}
-        @media(max-width:520px){.graph-point-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media(max-width:520px){.graph-point-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.graph-point-grid[data-count="1"]{grid-template-columns:1fr}.graph-point-grid[data-count="3"] .graph-point-value:last-child{grid-column:1/-1}}
       `;
       document.head.append(style);
     }
@@ -277,17 +298,6 @@
     drawGraphCursor();
     updateGraphPointInfo();
   };
-
-  $$('.graph-tab').forEach((button) => {
-    button.addEventListener('click', () => {
-      const geometry = graphDataGeometry();
-      if (state.graphCursor.frame != null && !selectedGraphItem(geometry)) state.graphCursor.frame = null;
-      requestAnimationFrame(() => {
-        drawChart();
-        updateGraphPointInfo();
-      });
-    });
-  });
 
   const resetGraphCursor = () => {
     state.graphCursor.frame = null;
