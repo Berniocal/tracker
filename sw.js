@@ -1,4 +1,4 @@
-const CACHE = 'tracker-mobile-v19';
+const CACHE = 'tracker-mobile-v20';
 const APP_SHELL = [
   './',
   './index.html',
@@ -15,6 +15,7 @@ const APP_SHELL = [
   './video-load-fix.js',
   './mobile-ui.js',
   './scale-flow-fix.js',
+  './range-controls.js',
   './manifest.webmanifest',
   './icon.svg'
 ];
