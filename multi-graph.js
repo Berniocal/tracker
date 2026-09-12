@@ -2,6 +2,7 @@
   const seriesMeta = {
     x:  { label: 'x',   unit: 'm',     color: '#155eef' },
     y:  { label: 'y',   unit: 'm',     color: '#7f56d9' },
+    s:  { label: '|s|', unit: 'm',     color: '#b54708' },
     vx: { label: 'vₓ',  unit: 'm/s',   color: '#f79009' },
     vy: { label: 'vᵧ',  unit: 'm/s',   color: '#d444f1' },
     v:  { label: '|v|', unit: 'm/s',   color: '#12b76a' },
@@ -11,7 +12,7 @@
     xy: { label: 'y(x)', unit: 'm',    color: '#155eef' }
   };
 
-  const timeSeries = ['x', 'y', 'vx', 'vy', 'v', 'ax', 'ay', 'a'];
+  const timeSeries = ['x', 'y', 's', 'vx', 'vy', 'v', 'ax', 'ay', 'a'];
   const graphChoices = [...timeSeries, 'xy'];
 
   state.graphSeries = [state.graph || 'x'];
