@@ -12,15 +12,18 @@
   };
 
   const timeSeries = ['x', 'y', 'vx', 'vy', 'v', 'ax', 'ay', 'a'];
-  const presets = {
-    motionX: ['x', 'vx', 'ax'],
-    motionY: ['y', 'vy', 'ay']
-  };
+  const graphChoices = [...timeSeries, 'xy'];
 
   state.graphSeries = [state.graph || 'x'];
   state.graphPlotGeometry = null;
 
   function normalizeGraphSeries() {
+    if (Array.isArray(state.graphSeries) && state.graphSeries.includes('xy')) {
+      state.graph = 'xy';
+      state.graphSeries = ['xy'];
+      return state.graphSeries;
+    }
+
     if (state.graph === 'xy') {
       state.graphSeries = ['xy'];
       return state.graphSeries;
@@ -39,15 +42,6 @@
   function setPrimaryGraph(key) {
     if (!graphConfigs[key]) return;
     state.graph = key;
-    $$('.graph-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.graph === key));
-  }
-
-  function syncGraphTabs() {
-    const selected = normalizeGraphSeries();
-    $$('.graph-tab').forEach((button) => {
-      const key = button.dataset.graph;
-      button.classList.toggle('multi-active', selected.includes(key) && key !== state.graph);
-    });
   }
 
   function seriesData(points, key, xKey = 'dt') {
@@ -80,20 +74,10 @@
     return ranges[unit] || { min: -1, max: 1 };
   }
 
-  function legendHtml(seriesKeys, ranges = null) {
-    return seriesKeys.map((key) => {
-      const meta = seriesMeta[key];
-      const range = ranges ? rangeForKey(key, ranges) : null;
-      const rangeText = range
-        ? `<small>${formatNumber(range.min, 2)} až ${formatNumber(range.max, 2)} ${meta.unit}</small>`
-        : `<small>${meta.unit}</small>`;
-      return `<span class="multi-legend-item"><i class="series-dot" style="background:${meta.color}"></i><b>${meta.label}</b>${rangeText}</span>`;
-    }).join('');
-  }
-
   function installMultiGraphUi() {
-    const tabs = document.querySelector('.graph-tabs');
-    if (!tabs || $('#multiGraphControls')) return;
+    const panel = $('#panelGraphs');
+    const chartWrap = panel?.querySelector('.chart-wrap');
+    if (!panel || !chartWrap || $('#multiGraphControls')) return;
 
     const controls = document.createElement('div');
     controls.id = 'multiGraphControls';
@@ -103,115 +87,89 @@
         <strong>Křivky v grafu</strong>
         <span id="multiGraphCount" class="tool-status">1 / 3</span>
       </div>
-      <div id="motionGraphPresets" class="motion-graph-presets">
-        <button type="button" class="secondary-btn small" data-preset="motionX">x + vₓ + aₓ</button>
-        <button type="button" class="secondary-btn small" data-preset="motionY">y + vᵧ + aᵧ</button>
-      </div>
       <div id="multiGraphChoices" class="multi-graph-choices"></div>
-      <div id="multiGraphLegend" class="multi-graph-legend"></div>
-      <p id="multiGraphHelp" class="micro-help">Až tři křivky mohou mít různé jednotky. Každá jednotka pak používá vlastní barevné svislé měřítko.</p>
+      <p id="multiGraphHelp" class="micro-help">Vyber až tři křivky. y(x) se zobrazuje samostatně.</p>
     `;
-    tabs.insertAdjacentElement('afterend', controls);
+    chartWrap.insertAdjacentElement('beforebegin', controls);
 
     if (!$('#multiGraphStyles')) {
       const style = document.createElement('style');
       style.id = 'multiGraphStyles';
       style.textContent = `
         .multi-graph-controls{margin:8px 0 10px;padding:11px;border:1px solid #e4e7ec;border-radius:12px;background:#f9fafb}
-        .motion-graph-presets{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:8px}
-        .motion-graph-presets .secondary-btn{min-height:38px;padding:7px 9px;font-size:.78rem}
-        .motion-graph-presets .active{background:#eff4ff;border-color:#84adff;color:#155eef}
         .multi-graph-choices{display:flex;flex-wrap:wrap;gap:7px}
         .multi-series-choice{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:7px 10px;border:1px solid #d0d5dd;border-radius:10px;background:#fff;font-size:.78rem;font-weight:800;color:#344054}
         .multi-series-choice input{width:17px;height:17px;min-height:0;margin:0;padding:0}
         .series-dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
-        .multi-graph-legend{display:flex;flex-wrap:wrap;gap:7px 10px;margin-top:9px;font-size:.74rem;color:#475467}
-        .multi-legend-item{display:inline-grid!important;grid-template-columns:auto auto;align-items:center;column-gap:5px;row-gap:0;padding:5px 7px;border:1px solid #e4e7ec;border-radius:8px;background:#fff}
-        .multi-legend-item small{grid-column:2;color:#667085;font-size:.66rem;font-weight:650;white-space:nowrap}
-        .graph-tab.multi-active{box-shadow:inset 0 0 0 2px #d0d5dd;background:#fff}
-        @media(max-width:430px){.motion-graph-presets{gap:5px}.motion-graph-presets .secondary-btn{font-size:.73rem}.multi-legend-item{padding:4px 6px}}
+        @media(max-width:430px){.multi-series-choice{padding:6px 8px;font-size:.73rem}}
       `;
       document.head.append(style);
     }
 
-    controls.querySelectorAll('[data-preset]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const keys = presets[button.dataset.preset];
-        if (!keys) return;
-        state.graphSeries = [...keys];
-        setPrimaryGraph(keys[0]);
+    renderMultiGraphUi();
+  }
+
+  function renderMultiGraphUi() {
+    const choices = $('#multiGraphChoices');
+    const count = $('#multiGraphCount');
+    const help = $('#multiGraphHelp');
+    if (!choices || !count || !help) return;
+
+    const selected = normalizeGraphSeries();
+
+    choices.innerHTML = graphChoices.map((key) => {
+      const meta = seriesMeta[key];
+      const checked = selected.includes(key) ? 'checked' : '';
+      const label = key === 'xy' ? meta.label : `${meta.label}(t)`;
+      return `<label class="multi-series-choice"><input type="checkbox" data-series="${key}" ${checked}><span class="series-dot" style="background:${meta.color}"></span>${label}</label>`;
+    }).join('');
+
+    choices.querySelectorAll('input[data-series]').forEach((input) => {
+      input.addEventListener('change', () => {
+        const key = input.dataset.series;
+
+        if (key === 'xy') {
+          if (input.checked) {
+            state.graphSeries = ['xy'];
+            setPrimaryGraph('xy');
+          } else {
+            state.graphSeries = ['x'];
+            setPrimaryGraph('x');
+          }
+          renderMultiGraphUi();
+          drawChart();
+          return;
+        }
+
+        let next = state.graph === 'xy' ? [] : [...normalizeGraphSeries()];
+
+        if (input.checked) {
+          if (!next.includes(key)) next.push(key);
+          if (next.length > 3) {
+            input.checked = false;
+            toast('V jednom grafu mohou být nejvýše tři křivky.');
+            return;
+          }
+        } else {
+          next = next.filter((item) => item !== key);
+          if (!next.length) {
+            input.checked = true;
+            toast('V grafu musí zůstat alespoň jedna křivka.');
+            return;
+          }
+        }
+
+        state.graphSeries = next;
+        if (state.graph === 'xy' || !next.includes(state.graph)) setPrimaryGraph(next[0]);
         renderMultiGraphUi();
         drawChart();
       });
     });
 
-    renderMultiGraphUi();
-  }
-
-  function renderMultiGraphUi(ranges = null) {
-    const choices = $('#multiGraphChoices');
-    const legend = $('#multiGraphLegend');
-    const count = $('#multiGraphCount');
-    const help = $('#multiGraphHelp');
-    const presetWrap = $('#motionGraphPresets');
-    if (!choices || !legend || !count || !help) return;
-
-    const selected = normalizeGraphSeries();
-
-    if (state.graph === 'xy') {
-      choices.innerHTML = '<span class="graph-point-hint">Graf y(x) se zobrazuje samostatně.</span>';
-      if (presetWrap) presetWrap.style.display = 'none';
-      help.textContent = 'Více křivek je dostupných pro grafy závislé na čase.';
-    } else {
-      if (presetWrap) presetWrap.style.display = '';
-      choices.innerHTML = timeSeries.map((key) => {
-        const meta = seriesMeta[key];
-        const checked = selected.includes(key) ? 'checked' : '';
-        return `<label class="multi-series-choice"><input type="checkbox" data-series="${key}" ${checked}><span class="series-dot" style="background:${meta.color}"></span>${meta.label}(t)</label>`;
-      }).join('');
-
-      help.textContent = 'Vyber 1–3 křivky. Při různých jednotkách má každá jednotka vlastní svislé měřítko; přesné hodnoty ukáže kurzor.';
-
-      choices.querySelectorAll('input[data-series]').forEach((input) => {
-        input.addEventListener('change', () => {
-          const key = input.dataset.series;
-          let next = [...normalizeGraphSeries()];
-
-          if (input.checked) {
-            if (!next.includes(key)) next.push(key);
-            if (next.length > 3) {
-              input.checked = false;
-              toast('V jednom grafu mohou být nejvýše tři křivky.');
-              return;
-            }
-          } else {
-            next = next.filter((item) => item !== key);
-            if (!next.length) {
-              input.checked = true;
-              toast('V grafu musí zůstat alespoň jedna křivka.');
-              return;
-            }
-          }
-
-          state.graphSeries = next;
-          if (!next.includes(state.graph)) setPrimaryGraph(next[0]);
-          renderMultiGraphUi();
-          drawChart();
-        });
-      });
-    }
-
-    count.textContent = `${selected.length} / 3`;
-    legend.innerHTML = legendHtml(selected, ranges);
-
-    if (presetWrap) {
-      presetWrap.querySelectorAll('[data-preset]').forEach((button) => {
-        const keys = presets[button.dataset.preset] || [];
-        const active = keys.length === selected.length && keys.every((key, index) => selected[index] === key);
-        button.classList.toggle('active', active);
-      });
-    }
-    syncGraphTabs();
+    count.textContent = selected.includes('xy') ? '1 / 1' : `${selected.length} / 3`;
+    help.textContent = selected.includes('xy')
+      ? 'Graf y(x) se zobrazuje samostatně.'
+      : 'Vyber 1–3 křivky. Při různých jednotkách používá každá jednotka vlastní svislé měřítko.';
   }
 
   function drawSeriesStats(seriesKeys, dataByKey) {
@@ -398,18 +356,9 @@
     }
 
     drawSeriesStats(seriesKeys, dataByKey);
-    renderMultiGraphUi(scaleRanges);
+    renderMultiGraphUi();
   };
 
   installMultiGraphUi();
-
-  $$('.graph-tab').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.graphSeries = [state.graph];
-      renderMultiGraphUi();
-      drawChart();
-    });
-  });
-
   $('#segmentEnabled')?.addEventListener('change', () => requestAnimationFrame(() => drawChart()));
 })();
