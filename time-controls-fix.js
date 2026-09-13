@@ -13,8 +13,18 @@
     if (selectionDrag) selectionDrag = null;
   }
 
+  function interruptTracker() {
+    if (state.auto.status !== 'running') return;
+    if (typeof window.cancelAutoTrackingNow === 'function') {
+      window.cancelAutoTrackingNow('time-control');
+      return;
+    }
+    state.auto.stopRequested = true;
+  }
+
   function seekByFrames(delta) {
-    if (!Number.isFinite(video.duration) || state.auto.status === 'running') return;
+    if (!Number.isFinite(video.duration)) return;
+    interruptTracker();
     clearVideoGestureState();
     video.pause();
     const targetFrame = Math.max(0, currentFrame() + delta);
@@ -24,12 +34,8 @@
   async function togglePlayback(event) {
     event.preventDefault();
     event.stopImmediatePropagation();
+    interruptTracker();
     clearVideoGestureState();
-
-    if (state.auto.status === 'running') {
-      toast('Nejdřív zastav automatické sledování.');
-      return;
-    }
 
     if (!video.paused) {
       video.pause();
@@ -64,15 +70,16 @@
   if (scrubber) {
     const prepareScrub = (event) => {
       event.stopPropagation();
+      interruptTracker();
       clearVideoGestureState();
-      if (state.auto.status !== 'running') video.pause();
+      video.pause();
     };
 
     scrubber.addEventListener('pointerdown', prepareScrub, true);
     scrubber.addEventListener('touchstart', prepareScrub, { capture: true, passive: true });
     scrubber.addEventListener('input', (event) => {
       event.stopImmediatePropagation();
-      if (state.auto.status === 'running') return;
+      interruptTracker();
       clearVideoGestureState();
       const target = Number(scrubber.value);
       if (Number.isFinite(target) && Number.isFinite(video.duration)) {
