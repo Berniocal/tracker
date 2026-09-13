@@ -1,37 +1,32 @@
 (() => {
   state.auto.runId = Number.isFinite(state.auto.runId) ? state.auto.runId : 0;
+  state.auto.suspendHeavyUi = false;
 
-  const yieldToBrowser = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  const yieldToBrowser = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
-  function finishCancelledRun() {
-    if (state.auto.status === 'running') state.auto.status = 'stopped';
-    state.auto.stopRequested = false;
-    updateTrackingUi();
-    updateTapHint();
-    drawOverlay();
+  function lightProgressUi() {
+    const count = state.trackPoints.length;
+    const pointCount = $('#pointCount');
+    if (pointCount) pointCount.textContent = `${count} ${count === 1 ? 'bod' : count >= 2 && count <= 4 ? 'body' : 'bodů'}`;
+    updateAutoUi();
   }
 
   function cancelAutoTrackingNow(reason = 'interaction') {
     state.auto.runId += 1;
     state.auto.stopRequested = true;
-    if (state.auto.status === 'running') {
-      state.auto.status = 'stopped';
-      updateTrackingUi();
-      updateTapHint();
-      drawOverlay();
-    }
+    state.auto.suspendHeavyUi = false;
+    if (state.auto.status === 'running') state.auto.status = 'stopped';
+    updateTrackingUi();
+    updateTapHint();
+    drawOverlay();
     return reason;
   }
 
   window.cancelAutoTrackingNow = cancelAutoTrackingNow;
+  stopAutoTracking = () => cancelAutoTrackingNow('stop-button');
 
-  stopAutoTracking = function stopAutoTrackingSafely() {
-    cancelAutoTrackingNow('stop-button');
-  };
-
-  // Keep the original matching principle, but bound the amount of work per frame.
-  // A very small template combined with a large search radius previously created
-  // tens of thousands of candidates and could block a phone for a long time.
+  // Bounded matcher: prevents a difficult frame from exploding into tens of
+  // thousands of comparisons on a phone.
   findBestMatch = function findBestMatchBounded(frame) {
     const template = state.auto.template;
     if (!template || !state.auto.box) return null;
@@ -42,12 +37,10 @@
     const predictedY = Math.round(previous.y + state.auto.lastShiftY * scale);
     const motion = Math.hypot(state.auto.lastShiftX, state.auto.lastShiftY) * scale;
 
-    const wantedRadiusX = Math.max(20, previous.w * 1.7, motion * 2.4);
-    const wantedRadiusY = Math.max(20, previous.h * 1.7, motion * 2.4);
     const maxRadiusX = Math.min(frame.width * 0.27, Math.max(72, previous.w * 4.5));
     const maxRadiusY = Math.min(frame.height * 0.27, Math.max(72, previous.h * 4.5));
-    const radiusX = Math.round(clamp(wantedRadiusX, 20, maxRadiusX));
-    const radiusY = Math.round(clamp(wantedRadiusY, 20, maxRadiusY));
+    const radiusX = Math.round(clamp(Math.max(20, previous.w * 1.7, motion * 2.4), 20, maxRadiusX));
+    const radiusY = Math.round(clamp(Math.max(20, previous.h * 1.7, motion * 2.4), 20, maxRadiusY));
 
     const minX = clamp(predictedX - radiusX, 0, Math.max(0, frame.width - template.w));
     const maxX = clamp(predictedX + radiusX, 0, Math.max(0, frame.width - template.w));
@@ -56,8 +49,7 @@
 
     const spanX = Math.max(1, maxX - minX + 1);
     const spanY = Math.max(1, maxY - minY + 1);
-    const targetCoarseCandidates = 1400;
-    const candidateStep = Math.ceil(Math.sqrt((spanX * spanY) / targetCoarseCandidates));
+    const candidateStep = Math.ceil(Math.sqrt((spanX * spanY) / 1400));
     const templateStep = Math.floor(Math.min(template.w, template.h) / 12);
     const coarse = clamp(Math.max(2, candidateStep, templateStep), 2, 10);
 
@@ -80,47 +72,57 @@
     const confidence = clamp(1 - best.error / 72, 0, 1);
     const inv = 1 / scale;
     return {
-      box: {
-        x: best.x * inv,
-        y: best.y * inv,
-        w: template.w * inv,
-        h: template.h * inv
-      },
+      box: { x: best.x * inv, y: best.y * inv, w: template.w * inv, h: template.h * inv },
       confidence,
       error: best.error
     };
   };
+
+  // Fast point insertion used only inside automatic tracking. The normal
+  // setTrackPoint wrapper recalculates motion summaries after every point; on
+  // long measurements that becomes increasingly expensive. We defer all heavy
+  // calculations until tracking stops.
+  function setAutoTrackPointFast(point, time, frame, confidence) {
+    if (state.segment?.enabled) {
+      const tolerance = 0.51 / fps();
+      const end = Number.isFinite(state.segment.end) ? state.segment.end : (video.duration || Infinity);
+      if (time < state.segment.start - tolerance || time > end + tolerance) return -1;
+    }
+
+    const existingIndex = state.trackPoints.findIndex((item) => item.frame === frame);
+    const item = { ...point, t: time, frame, source: 'auto', confidence };
+    if (existingIndex >= 0) state.trackPoints[existingIndex] = { ...state.trackPoints[existingIndex], ...item };
+    else state.trackPoints.push(item);
+    state.trackPoints.sort((a, b) => a.t - b.t);
+    return state.trackPoints.findIndex((itemPoint) => itemPoint.frame === frame);
+  }
 
   runAutoTracking = async function runAutoTrackingStable() {
     if (!state.auto.template || !state.auto.box || state.auto.status === 'running') return;
 
     const runId = ++state.auto.runId;
     state.auto.stopRequested = false;
+    state.auto.suspendHeavyUi = true;
     video.pause();
 
-    // A template belongs to the frame on which it was selected. If the user has
-    // moved elsewhere in the video, return to that frame before tracking.
-    if (Number.isFinite(state.auto.startFrame) && currentFrame() !== state.auto.startFrame) {
-      try {
-        await seekToFrame(state.auto.startFrame);
-      } catch {}
-      if (runId !== state.auto.runId) return;
-    }
-
-    state.auto.status = 'running';
-    updateTrackingUi();
-    updateTapHint();
-
-    let frame = currentFrame();
-    const videoMaxFrame = Math.floor((video.duration || 0) * fps());
-    const selectedEnd = state.segment?.enabled && Number.isFinite(state.segment.end)
-      ? Math.floor(state.segment.end * fps() + 1e-6)
-      : videoMaxFrame;
-    const maxFrame = Math.min(videoMaxFrame, selectedEnd);
-    let processed = 0;
-    let lastUiUpdate = 0;
-
     try {
+      if (Number.isFinite(state.auto.startFrame) && currentFrame() !== state.auto.startFrame) {
+        await seekToFrame(state.auto.startFrame);
+        if (runId !== state.auto.runId) return;
+      }
+
+      state.auto.status = 'running';
+      lightProgressUi();
+      updateTapHint();
+
+      let frame = currentFrame();
+      const videoMaxFrame = Math.floor((video.duration || 0) * fps());
+      const selectedEnd = state.segment?.enabled && Number.isFinite(state.segment.end)
+        ? Math.floor(state.segment.end * fps() + 1e-6)
+        : videoMaxFrame;
+      const maxFrame = Math.min(videoMaxFrame, selectedEnd);
+      let processed = 0;
+
       while (frame + frameStep() <= maxFrame && processed < 2000) {
         if (runId !== state.auto.runId || state.auto.stopRequested || state.auto.status !== 'running') break;
 
@@ -128,8 +130,6 @@
         await seekToFrame(nextFrame);
         if (runId !== state.auto.runId || state.auto.stopRequested || state.auto.status !== 'running') break;
 
-        // Give touch controls, scrolling and the browser video pipeline a chance
-        // to run before the CPU-heavy image comparison starts.
         await yieldToBrowser();
         if (runId !== state.auto.runId || state.auto.stopRequested || state.auto.status !== 'running') break;
 
@@ -139,10 +139,9 @@
           y: state.auto.box.y + state.auto.box.h / 2
         };
 
-        const matchStarted = performance.now();
+        const started = performance.now();
         const match = findBestMatch(captured);
-        const matchTime = performance.now() - matchStarted;
-
+        const matchTime = performance.now() - started;
         if (!match) {
           state.auto.status = 'lost';
           break;
@@ -159,42 +158,28 @@
 
         if (match.confidence < state.auto.threshold) {
           state.auto.status = 'lost';
-          drawOverlay();
-          updateAutoUi();
           break;
         }
 
-        setTrackPoint(center, video.currentTime, nextFrame, 'auto', match.confidence);
-
-        // Template adaptation allocates another pixel buffer. Doing it every
-        // third frame is visually equivalent here and substantially reduces GC
-        // pressure on phones during long measurements.
-        if (processed % 3 === 0 && match.confidence > state.auto.threshold + 0.12) {
+        setAutoTrackPointFast(center, video.currentTime, nextFrame, match.confidence);
+        if (processed % 4 === 0 && match.confidence > state.auto.threshold + 0.12) {
           adaptTemplate(captured, match.box, 0.10);
         }
 
         frame = nextFrame;
         processed += 1;
+        lightProgressUi();
 
-        const now = performance.now();
-        if (processed % 3 === 0 || now - lastUiUpdate > 120) {
-          updateTrackingUi();
-          drawOverlay();
-          lastUiUpdate = now;
-        } else {
-          updateAutoUi();
-        }
+        // Redrawing the full trail and vectors becomes expensive as the number
+        // of points grows, so do it only occasionally while the tracker runs.
+        if (processed % 6 === 0) drawOverlay();
 
-        // A single pathological frame should stop gracefully instead of making
-        // the whole tab appear dead for the rest of the session.
         if (matchTime > 1400) {
           state.auto.status = 'stopped';
-          toast('Sledování bylo zastaveno, protože tento snímek je příliš náročný. Zkus objekt označit menším rámečkem.');
+          toast('Sledování bylo bezpečně zastaveno, protože tento snímek je příliš náročný. Zkus menší rámeček kolem objektu.');
           break;
         }
 
-        // Yield on every frame. This is the important difference for mobile:
-        // the Stop button and browser video controls remain responsive.
         await yieldToBrowser();
       }
 
@@ -210,6 +195,7 @@
     } finally {
       if (runId === state.auto.runId) {
         state.auto.stopRequested = false;
+        state.auto.suspendHeavyUi = false;
         if (state.auto.status === 'running') state.auto.status = 'stopped';
         updateTrackingUi();
         updateTapHint();
@@ -218,19 +204,17 @@
     }
   };
 
-  // If another part of the app changes the video source, invalidate any still
-  // pending async tracking loop immediately.
   const invalidateRun = () => {
     state.auto.runId += 1;
     state.auto.stopRequested = false;
+    state.auto.suspendHeavyUi = false;
   };
   $('#cameraInput')?.addEventListener('change', invalidateRun, true);
   $('#fileInput')?.addEventListener('change', invalidateRun, true);
   $('#resetBtn')?.addEventListener('click', invalidateRun, true);
 
-  // Replace the two measurement-range inputs with listener-free clones. The
-  // previous implementation sought on every tiny pointer move. Here state and
-  // labels update immediately, but the expensive video seek is throttled.
+  // Replace the measurement-range inputs with listener-free clones. State and
+  // labels update instantly, but actual video seeks are throttled.
   function installStableMeasurementRange() {
     const oldStart = $('#videoRangeStart');
     const oldEnd = $('#videoRangeEnd');
@@ -243,7 +227,6 @@
     oldStart.replaceWith(start);
     oldEnd.replaceWith(end);
     root.dataset.stableRange = '1';
-
     let seekTimer = null;
 
     const updateFill = (a, b, duration) => {
@@ -288,10 +271,10 @@
       } else {
         seekTimer = setTimeout(() => {
           if (Number.isFinite(video.duration)) video.currentTime = clamp(target, 0, video.duration);
-        }, 110);
+        }, 140);
       }
 
-      if (state.stage === 'graphs') requestAnimationFrame(() => drawChart());
+      if (state.stage === 'graphs') requestAnimationFrame(drawChart);
     };
 
     start.addEventListener('pointerdown', () => cancelAutoTrackingNow('segment-range'), { passive: true });
