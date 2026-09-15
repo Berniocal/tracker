@@ -50,6 +50,11 @@
     text.innerHTML = html;
   }
 
+  function setVideoReadyControls(ready) {
+    const next = $('#panelVideo .next-stage');
+    if (next) next.disabled = !ready;
+  }
+
   function humanFileSize(bytes) {
     if (!Number.isFinite(bytes)) return '–';
     if (bytes < 1024 * 1024) return `${formatNumber(bytes / 1024, 1)} kB`;
@@ -62,21 +67,20 @@
     return match ? match[1].toLowerCase() : '';
   }
 
-  function normalizedVideoBlob(file) {
-    const ext = extensionOf(file);
-    const mimeByExt = {
+  function preferredMime(file) {
+    return {
       mp4: 'video/mp4',
       m4v: 'video/mp4',
       mov: 'video/quicktime',
       webm: 'video/webm',
       ogv: 'video/ogg',
       ogg: 'video/ogg'
-    };
-    const wanted = mimeByExt[ext];
-    if (!wanted) return file;
-    if (file.type === wanted) return file;
-    // Některé Android file providery vrací MP4 jako application/octet-stream
-    // nebo bez MIME typu. Nový Blob zachová stejná data, ale opraví Content-Type.
+    }[extensionOf(file)] || '';
+  }
+
+  function fallbackBlob(file) {
+    const wanted = preferredMime(file);
+    if (!wanted || file.type === wanted) return null;
     return new Blob([file], { type: wanted });
   }
 
@@ -93,14 +97,15 @@
 
   async function detectCodec(file) {
     try {
-      const probeSize = Math.min(file.size, 6 * 1024 * 1024);
+      const chunk = Math.min(file.size, 1024 * 1024);
+      const starts = file.size <= chunk
+        ? [0]
+        : [0, Math.floor(file.size * 0.25), Math.floor(file.size * 0.5), Math.floor(file.size * 0.75), Math.max(0, file.size - chunk)];
       const parts = [];
-      if (probeSize > 0) parts.push(new Uint8Array(await file.slice(0, probeSize).arrayBuffer()));
-      if (file.size > probeSize) {
-        const tailStart = Math.max(probeSize, file.size - probeSize);
-        parts.push(new Uint8Array(await file.slice(tailStart).arrayBuffer()));
+      for (const start of [...new Set(starts)]) {
+        const end = Math.min(file.size, start + chunk);
+        if (end > start) parts.push(new Uint8Array(await file.slice(start, end).arrayBuffer()));
       }
-
       for (const codec of codecSignatures) {
         for (const key of codec.keys) {
           if (parts.some((bytes) => containsAscii(bytes, key))) return codec.label;
@@ -114,57 +119,113 @@
     const code = error?.code || 0;
     if (code === 1) return 'Načítání videa bylo přerušeno.';
     if (code === 2) return 'Při čtení videa nastala chyba.';
-    if (code === 3) return 'Prohlížeč soubor načetl, ale nedokázal video dekódovat.';
+    if (code === 3) return 'Prohlížeč soubor načetl, ale nedokázal obraz videa dekódovat.';
     if (code === 4) {
       if (codec === 'HEVC / H.265') {
-        return 'Soubor je MP4, ale uvnitř používá HEVC / H.265. Tento prohlížeč ho na tomto telefonu neumí dekódovat. Pro Tracker použij video H.264 / AVC.';
+        return 'Video používá HEVC / H.265 a tento prohlížeč ho na tomto telefonu neumí dekódovat. Pro Tracker použij H.264 / AVC.';
       }
-      return 'Formát nebo kodek uvnitř videa tento prohlížeč nepodporuje. Přípona MP4 sama o sobě kompatibilitu nezaručuje.';
+      return 'Prohlížeč tento videoformát nebo jeho kodek nepřijal.';
     }
-    return 'Video se nepodařilo načíst nebo dekódovat.';
+    return 'Video se nepodařilo připravit.';
   }
 
-  function waitForDecodedFrame(attempt, timeoutMs = 15000) {
+  function waitForVideoReady(attempt, timeoutMs = 20000) {
     return new Promise((resolve, reject) => {
       let finished = false;
       let timer = null;
+      let metadataGraceTimer = null;
+      let pollTimer = null;
 
       const cleanup = () => {
         clearTimeout(timer);
-        video.removeEventListener('loadeddata', ready);
-        video.removeEventListener('canplay', ready);
+        clearTimeout(metadataGraceTimer);
+        clearInterval(pollTimer);
+        video.removeEventListener('loadedmetadata', metadataReady);
+        video.removeEventListener('loadeddata', decodedReady);
+        video.removeEventListener('canplay', decodedReady);
+        video.removeEventListener('resize', metadataReady);
         video.removeEventListener('error', failed, true);
-        video.removeEventListener('abort', aborted);
       };
+
       const done = (callback, value) => {
         if (finished) return;
         finished = true;
         cleanup();
         callback(value);
       };
-      const ready = () => {
+
+      const hasMetadata = () => video.videoWidth > 0 && video.videoHeight > 0 && video.readyState >= 1;
+      const hasDecodedFrame = () => video.videoWidth > 0 && video.videoHeight > 0 && video.readyState >= 2;
+
+      const decodedReady = () => {
         if (attempt !== loadAttempt) return;
-        if (video.videoWidth > 0 && video.videoHeight > 0 && video.readyState >= 2) done(resolve);
+        if (hasDecodedFrame()) done(resolve, { decoded: true });
       };
+
+      const metadataReady = () => {
+        if (attempt !== loadAttempt || !hasMetadata()) return;
+        if (hasDecodedFrame()) {
+          done(resolve, { decoded: true });
+          return;
+        }
+        // Některé mobilní prohlížeče při úsporném režimu nevyšlou loadeddata.
+        // Pokud metadata a rozměry videa existují a nepřišla chyba dekodéru,
+        // po krátké prodlevě považujeme soubor za načtený.
+        clearTimeout(metadataGraceTimer);
+        metadataGraceTimer = setTimeout(() => {
+          if (attempt === loadAttempt && hasMetadata() && !video.error) done(resolve, { decoded: false });
+        }, 1200);
+      };
+
       const failed = (event) => {
         if (attempt !== loadAttempt) return;
-        // Přesná diagnostika níže nahrazuje starou obecnou hlášku z app.js.
         event?.stopImmediatePropagation?.();
         done(reject, video.error || new Error('media-error'));
       };
-      const aborted = () => {
-        if (attempt !== loadAttempt) return;
-        done(reject, new Error('aborted'));
-      };
 
-      video.addEventListener('loadeddata', ready);
-      video.addEventListener('canplay', ready);
+      video.addEventListener('loadedmetadata', metadataReady);
+      video.addEventListener('loadeddata', decodedReady);
+      video.addEventListener('canplay', decodedReady);
+      video.addEventListener('resize', metadataReady);
       video.addEventListener('error', failed, true);
-      video.addEventListener('abort', aborted);
-      timer = setTimeout(() => done(reject, new Error('timeout')), timeoutMs);
 
-      if (video.readyState >= 2 && video.videoWidth > 0) ready();
+      pollTimer = setInterval(() => {
+        if (attempt !== loadAttempt) return;
+        if (hasDecodedFrame()) decodedReady();
+        else if (hasMetadata()) metadataReady();
+      }, 150);
+
+      timer = setTimeout(() => {
+        if (attempt !== loadAttempt) return;
+        if (hasMetadata() && !video.error) done(resolve, { decoded: false });
+        else done(reject, new Error('timeout'));
+      }, timeoutMs);
     });
+  }
+
+  function clearCurrentVideoSource() {
+    video.pause();
+    video.removeAttribute('src');
+    // Tohle load() pouze vyčistí STARÝ zdroj. Není už voláno po nastavení nového src.
+    try { video.load(); } catch {}
+    if (state.videoUrl) {
+      URL.revokeObjectURL(state.videoUrl);
+      state.videoUrl = null;
+    }
+  }
+
+  async function tryVideoSource(source, attempt) {
+    if (attempt !== loadAttempt) throw new Error('stale-attempt');
+    clearCurrentVideoSource();
+    const url = URL.createObjectURL(source);
+    state.videoUrl = url;
+    video.preload = 'auto';
+
+    // Posluchače instalujeme před nastavením src. Nastavení src samo spustí
+    // resource selection, takže už znovu nevoláme video.load().
+    const readyPromise = waitForVideoReady(attempt);
+    video.src = url;
+    return readyPromise;
   }
 
   loadVideo = async function loadVideoRobust(file) {
@@ -172,15 +233,7 @@
     const attempt = ++loadAttempt;
     const codecPromise = detectCodec(file);
 
-    video.pause();
-    if (state.videoUrl) {
-      video.removeAttribute('src');
-      video.load();
-      URL.revokeObjectURL(state.videoUrl);
-    }
-
-    const sourceBlob = normalizedVideoBlob(file);
-    state.videoUrl = URL.createObjectURL(sourceBlob);
+    clearCurrentVideoSource();
     state.videoFile = file;
     state.scalePoints = [];
     state.metersPerPixel = null;
@@ -196,18 +249,32 @@
     $('#workspace').classList.remove('hidden');
     setStage('video');
     updateTrackingUi();
+    setVideoReadyControls(false);
 
-    const typeText = file.type || sourceBlob.type || 'typ neuveden';
-    setLoadStatus('loading', `<strong>Načítám ${file.name || 'video'}…</strong><div class="video-load-meta">${humanFileSize(file.size)} • ${typeText}</div>`);
+    const originalType = file.type || 'typ neuveden';
+    setLoadStatus('loading', `<strong>Načítám ${file.name || 'video'}…</strong><div class="video-load-meta">${humanFileSize(file.size)} • ${originalType}</div>`);
 
-    video.preload = 'auto';
-    video.src = state.videoUrl;
-
-    const readyPromise = waitForDecodedFrame(attempt);
-    video.load();
+    let readyInfo = null;
+    let lastError = null;
+    let usedFallbackMime = false;
 
     try {
-      await readyPromise;
+      try {
+        // První pokus vždy používá původní File přesně tak, jak ho předal prohlížeč.
+        readyInfo = await tryVideoSource(file, attempt);
+      } catch (error) {
+        lastError = error;
+        if (attempt !== loadAttempt) return;
+
+        // Druhý pokus používáme pouze tehdy, pokud provider poslal prázdný nebo
+        // chybný MIME typ. Data videa se nemění.
+        const fallback = fallbackBlob(file);
+        if (!fallback) throw error;
+        usedFallbackMime = true;
+        setLoadStatus('loading', `<strong>Načítám video druhým způsobem…</strong><div class="video-load-meta">${file.name || 'video'} • ${fallback.type}</div>`);
+        readyInfo = await tryVideoSource(fallback, attempt);
+      }
+
       if (attempt !== loadAttempt) return;
       const codec = await codecPromise;
       if (attempt !== loadAttempt) return;
@@ -216,20 +283,25 @@
       resetView();
       updateTimeUi();
       requestAnimationFrame(resizeOverlay);
+      setVideoReadyControls(true);
 
       const duration = Number.isFinite(video.duration) ? `${formatNumber(video.duration, 2)} s` : 'délka neznámá';
       const codecText = codec || 'kodek neurčen';
-      setLoadStatus('success', `<strong>Video je připravené.</strong><div class="video-load-meta">${file.name || 'video'} • ${video.videoWidth}×${video.videoHeight} • ${duration} • ${codecText}</div>`);
+      const fallbackText = usedFallbackMime ? ' • opraven MIME typ' : '';
+      const frameText = readyInfo?.decoded === false ? ' • obraz se připraví při prvním seeku' : '';
+      setLoadStatus('success', `<strong>Video je připravené.</strong><div class="video-load-meta">${file.name || 'video'} • ${video.videoWidth}×${video.videoHeight} • ${duration} • ${codecText}${fallbackText}${frameText}</div>`);
       toast('Video je připravené.');
     } catch (error) {
       if (attempt !== loadAttempt) return;
+      lastError = error || lastError;
       const codec = await codecPromise;
       if (attempt !== loadAttempt) return;
 
-      const timedOut = error?.message === 'timeout';
+      setVideoReadyControls(false);
+      const timedOut = lastError?.message === 'timeout';
       const reason = timedOut
-        ? 'Video se během 15 sekund nepodařilo připravit. Soubor může být poškozený nebo používat nepodporovaný kodek.'
-        : mediaErrorMessage(video.error || error, codec);
+        ? 'Video neposkytlo ani základní metadata. Soubor může být poškozený nebo prohlížečem nepodporovaný.'
+        : mediaErrorMessage(video.error || lastError, codec);
       const codecText = codec ? `Rozpoznaný kodek: ${codec}.` : 'Kodek se nepodařilo spolehlivě určit.';
       setLoadStatus('error', `<strong>Video se nepodařilo načíst.</strong><br>${reason}<div class="video-load-meta">${codecText} • ${file.name || 'video'} • ${humanFileSize(file.size)}</div>`);
       toast('Video se nepodařilo načíst – podrobnosti jsou pod nastavením videa.');
