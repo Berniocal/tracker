@@ -221,7 +221,8 @@
 
   window.seekMeasurementStart = async function seekMeasurementStart(reason = 'stage') {
     stopTracker(reason);
-    clearGestureState();
+    // Důležité: návrat na začátek úseku nesmí sahat na stav označování
+    // objektu. Ovládání automatického výběru má vlastní původní logiku.
     const { start } = segmentBounds();
     return seekExact(start);
   };
