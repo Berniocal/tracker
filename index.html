@@ -20,7 +20,7 @@
     </header>
 
     <nav class="steps" aria-label="Postup měření">
-      <button class="step active" data-stage="video" type="button"><span>1</span>Video</button>
+      <button class="step active" data-stage="video" type="button"><span>1</span>Úsek</button>
       <button class="step" data-stage="scale" type="button"><span>2</span>Měřítko</button>
       <button class="step" data-stage="track" type="button"><span>3</span>Pohyb</button>
       <button class="step" data-stage="graphs" type="button"><span>4</span>Grafy</button>
@@ -70,8 +70,8 @@
       </div>
 
       <section id="panelVideo" class="stage-panel card">
-        <h2>1. Video</h2>
-        <p class="muted">Vyber snímkovou frekvenci videa. Pokud si nejsi jistý, běžné video bývá 30 nebo 60 fps.</p>
+        <h2>1. Měřený úsek</h2>
+        <p class="muted">Nejprve nastav FPS a pomocí dvou jezdců vyber začátek a konec měření. Vybraný jezdec můžeš doladit šipkami po jednotlivých snímcích.</p>
         <div class="control-grid">
           <label>FPS
             <input id="fpsInput" type="number" min="1" max="960" step="1" value="30" inputmode="numeric">
@@ -85,7 +85,7 @@
             </select>
           </label>
         </div>
-        <button class="primary-btn next-stage" data-next="scale" type="button">Nastavit měřítko →</button>
+        <button class="primary-btn next-stage" data-next="scale" type="button">Potvrdit úsek a nastavit měřítko →</button>
       </section>
 
       <section id="panelScale" class="stage-panel card hidden">
