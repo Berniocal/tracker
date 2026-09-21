@@ -1,5 +1,5 @@
 (() => {
-  const SEEK_THROTTLE_MS = 70;
+  const SEEK_THROTTLE_MS = 45;
   let previewTimer = null;
   let pendingPreviewTarget = null;
   let lastPreviewAt = 0;
@@ -160,9 +160,21 @@
 
   function previewSeek(target) {
     pendingPreviewTarget = target;
-    if (previewTimer) return;
+    const now = performance.now();
+    const elapsed = now - lastPreviewAt;
 
-    const delay = Math.max(0, SEEK_THROTTLE_MS - (performance.now() - lastPreviewAt));
+    // Když je dekodér volný, ukaž nový snímek hned. Při rychlém tažení
+    // pouze omezíme počet seeků, ale vždy držíme poslední požadovanou polohu.
+    if (!previewTimer && elapsed >= SEEK_THROTTLE_MS) {
+      lastPreviewAt = now;
+      const value = pendingPreviewTarget;
+      pendingPreviewTarget = null;
+      if (Number.isFinite(value)) setVideoTime(value);
+      return;
+    }
+
+    if (previewTimer) return;
+    const delay = Math.max(0, SEEK_THROTTLE_MS - elapsed);
     previewTimer = setTimeout(() => {
       previewTimer = null;
       lastPreviewAt = performance.now();
@@ -299,6 +311,13 @@
       video.pause();
     }
     rangeEditingKind = kind;
+
+    // Už při chycení jezdce ukaž přesně snímek, který tento jezdec značí.
+    // U pravého jezdce tak uživatel okamžitě vidí konec měřeného úseku.
+    const bounds = segmentBounds();
+    cancelPreviewSeek();
+    lastPreviewAt = performance.now();
+    setVideoTime(kind === 'end' ? bounds.end : bounds.start);
   }
 
   function handleRangeInput(kind) {
@@ -526,6 +545,7 @@
 
       if (stage === 'scale' || stage === 'track') {
         requestAnimationFrame(async () => {
+          // Každá pracovní fáze začíná přesně na prvním snímku měřeného úseku.
           await window.seekMeasurementStart(`stage-${stage}`);
           syncSegmentScrubber();
         });
