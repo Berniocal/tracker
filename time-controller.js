@@ -8,6 +8,7 @@
   let rangeEditing = false;
   let rangeEditingKind = null;
   let rangeStartAtPointerDown = null;
+  let selectedBoundary = 'start';
 
   function durationValue() {
     return Number.isFinite(video.duration) ? video.duration : 0;
@@ -25,6 +26,96 @@
     const rawEnd = Number.isFinite(state.segment?.end) ? state.segment.end : duration;
     const end = clamp(rawEnd, Math.min(duration, start + step), duration);
     return { start, end };
+  }
+
+  function installTimelineStyles() {
+    if ($('#measurementTimelineStyles')) return;
+    const style = document.createElement('style');
+    style.id = 'measurementTimelineStyles';
+    style.textContent = `
+      #videoDualRange[data-selected-boundary="start"] #videoRangeStart,
+      #videoDualRange[data-selected-boundary="end"] #videoRangeEnd{z-index:4}
+      #videoDualRange[data-selected-boundary="start"] #videoRangeEnd,
+      #videoDualRange[data-selected-boundary="end"] #videoRangeStart{z-index:2}
+      #videoDualRange[data-selected-boundary="start"] #videoRangeStart::-webkit-slider-thumb,
+      #videoDualRange[data-selected-boundary="end"] #videoRangeEnd::-webkit-slider-thumb{
+        box-shadow:0 0 0 4px rgba(21,94,239,.18),0 1px 4px rgba(16,24,40,.28)
+      }
+      #videoDualRange[data-selected-boundary="start"] #videoRangeStart::-moz-range-thumb,
+      #videoDualRange[data-selected-boundary="end"] #videoRangeEnd::-moz-range-thumb{
+        box-shadow:0 0 0 4px rgba(21,94,239,.18),0 1px 4px rgba(16,24,40,.28)
+      }
+      #videoMeasurementRange[hidden], .video-scrubber-wrap[hidden]{display:none!important}
+    `;
+    document.head.append(style);
+  }
+
+  function updateTransportLabels() {
+    const prev = $('#prevFrameBtn');
+    const next = $('#nextFrameBtn');
+    const play = $('#playBtn');
+    if (state.stage === 'video') {
+      const name = selectedBoundary === 'start' ? 'začátek' : 'konec';
+      if (prev) {
+        prev.setAttribute('aria-label', `Posunout ${name} o jeden snímek zpět`);
+        prev.title = `Posunout ${name} o jeden snímek zpět`;
+      }
+      if (next) {
+        next.setAttribute('aria-label', `Posunout ${name} o jeden snímek dopředu`);
+        next.title = `Posunout ${name} o jeden snímek dopředu`;
+      }
+      if (play) {
+        play.setAttribute('aria-label', 'Přehrát nebo pozastavit vybraný měřený úsek');
+        play.title = 'Přehrát vybraný měřený úsek';
+      }
+    } else {
+      if (prev) {
+        prev.setAttribute('aria-label', 'Předchozí snímek v měřeném úseku');
+        prev.title = 'Předchozí snímek';
+      }
+      if (next) {
+        next.setAttribute('aria-label', 'Další snímek v měřeném úseku');
+        next.title = 'Další snímek';
+      }
+      if (play) {
+        play.setAttribute('aria-label', 'Přehrát nebo pozastavit měřený úsek');
+        play.title = 'Přehrát měřený úsek';
+      }
+    }
+  }
+
+  function selectBoundary(kind) {
+    selectedBoundary = kind === 'end' ? 'end' : 'start';
+    const root = $('#videoDualRange');
+    if (root) root.dataset.selectedBoundary = selectedBoundary;
+    const bounds = segmentBounds();
+    if (durationValue() > 0) updateRangeAppearance(bounds.start, bounds.end);
+    updateTransportLabels();
+  }
+
+  function syncSegmentScrubber() {
+    const scrubber = $('#videoScrubber');
+    const duration = durationValue();
+    if (!scrubber || !(duration > 0)) return;
+    const { start, end } = segmentBounds();
+    scrubber.min = String(start);
+    scrubber.max = String(end);
+    scrubber.step = String(frameDuration());
+    scrubber.value = String(clamp(video.currentTime, start, end));
+  }
+
+  function updateTimelineMode(stage = state.stage) {
+    const selectingRange = stage === 'video';
+    const rangeControl = $('#videoMeasurementRange');
+    const scrubberWrap = document.querySelector('.video-scrubber-wrap');
+
+    if (rangeControl) rangeControl.hidden = !selectingRange;
+    if (scrubberWrap) scrubberWrap.hidden = selectingRange;
+
+    if (selectingRange) selectBoundary(selectedBoundary);
+    else syncSegmentScrubber();
+
+    updateTransportLabels();
   }
 
   function clearGestureState() {
@@ -132,7 +223,8 @@
     const hi = clamp(end / duration * 100, 0, 100);
     root.style.setProperty('--range-lo', `${lo}%`);
     root.style.setProperty('--range-hi', `${hi}%`);
-    label.textContent = `${formatNumber(start, 3)} s – ${formatNumber(end, 3)} s`;
+    const active = selectedBoundary === 'start' ? 'Začátek' : 'Konec';
+    label.textContent = `${active} • ${formatNumber(start, 3)} s – ${formatNumber(end, 3)} s`;
   }
 
   function normalizeRangeFromInputs(changed) {
@@ -192,11 +284,13 @@
       toast('Začátek měřeného úseku se změnil. Objekt pro automatické sledování označ znovu.');
     }
 
+    syncSegmentScrubber();
     try { updateTrackingUi(); } catch {}
     if (state.stage === 'graphs') requestAnimationFrame(() => drawChart());
   }
 
   function beginRangeEdit(kind) {
+    selectBoundary(kind);
     if (!rangeEditing) {
       rangeEditing = true;
       rangeStartAtPointerDown = Number(state.segment?.start) || 0;
@@ -232,6 +326,7 @@
 
     const wire = (input, kind) => {
       input.addEventListener('pointerdown', () => beginRangeEdit(kind), { passive: true });
+      input.addEventListener('focus', () => selectBoundary(kind));
       input.addEventListener('input', () => handleRangeInput(kind));
       input.addEventListener('change', () => finalizeRangeEdit(kind));
       input.addEventListener('pointerup', () => setTimeout(() => finalizeRangeEdit(kind), 0), { passive: true });
@@ -239,6 +334,7 @@
     };
     wire(startInput, 'start');
     wire(endInput, 'end');
+    selectBoundary(selectedBoundary);
 
     const { start, end } = segmentBounds();
     if (durationValue() > 0) {
@@ -265,35 +361,41 @@
       video.pause();
     }, { passive: true });
     scrubber.addEventListener('input', () => {
-      const target = Number(scrubber.value);
+      const bounds = segmentBounds();
+      const target = clamp(Number(scrubber.value), bounds.start, bounds.end);
       if (Number.isFinite(target)) previewSeek(target);
     });
     const finish = () => {
       if (!scrubbing) return;
       scrubbing = false;
-      const target = Number(scrubber.value);
+      const bounds = segmentBounds();
+      const target = clamp(Number(scrubber.value), bounds.start, bounds.end);
       cancelPreviewSeek();
       if (Number.isFinite(target)) setVideoTime(target);
     };
     scrubber.addEventListener('change', finish);
     scrubber.addEventListener('pointerup', finish, { passive: true });
     scrubber.addEventListener('pointercancel', finish, { passive: true });
+    syncSegmentScrubber();
   }
 
   function monitorPlayback(token) {
     if (token !== playbackToken || video.paused) return;
     const { start, end } = segmentBounds();
     const tolerance = 0.35 / fps();
-    if (state.segment?.enabled && video.currentTime >= end - tolerance) {
+    if (video.currentTime >= end - tolerance) {
       video.pause();
       setVideoTime(end);
+      syncSegmentScrubber();
       return;
     }
-    if (state.segment?.enabled && video.currentTime < start - tolerance) {
+    if (video.currentTime < start - tolerance) {
       video.pause();
       setVideoTime(start);
+      syncSegmentScrubber();
       return;
     }
+    syncSegmentScrubber();
     requestAnimationFrame(() => monitorPlayback(token));
   }
 
@@ -309,12 +411,8 @@
 
     const bounds = segmentBounds();
     const tolerance = 0.5 / fps();
-    if (state.segment?.enabled) {
-      if (video.currentTime < bounds.start - tolerance || video.currentTime >= bounds.end - tolerance) {
-        await seekExact(bounds.start);
-      }
-    } else if (video.ended || video.currentTime >= durationValue() - 0.001) {
-      await seekExact(0);
+    if (video.currentTime < bounds.start - tolerance || video.currentTime >= bounds.end - tolerance || video.ended) {
+      await seekExact(bounds.start);
     }
 
     try {
@@ -326,7 +424,53 @@
     }
   }
 
+  async function stepSelectedBoundary(delta) {
+    stopTracker('segment-boundary-step');
+    clearGestureState();
+    video.pause();
+
+    const startInput = $('#videoRangeStart');
+    const endInput = $('#videoRangeEnd');
+    if (!startInput || !endInput) return;
+
+    const beforeStart = Number(state.segment?.start) || 0;
+    const step = frameDuration();
+    const duration = durationValue();
+    let target;
+
+    if (selectedBoundary === 'start') {
+      target = clamp((Number(startInput.value) || 0) + delta * step, 0, (Number(endInput.value) || duration) - step);
+      startInput.value = String(target);
+    } else {
+      target = clamp((Number(endInput.value) || duration) + delta * step, (Number(startInput.value) || 0) + step, duration);
+      endInput.value = String(target);
+    }
+
+    const values = normalizeRangeFromInputs(selectedBoundary);
+    if (!values) return;
+
+    const legacyToggle = $('#segmentEnabled');
+    if (legacyToggle) {
+      legacyToggle.checked = state.segment.enabled;
+      legacyToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    if (selectedBoundary === 'start' && Math.abs(values.start - beforeStart) > 0.25 / fps() && state.auto?.template) {
+      resetAutoTracker();
+      toast('Začátek měřeného úseku se změnil. Objekt pro automatické sledování označ znovu.');
+    }
+
+    syncSegmentScrubber();
+    try { updateTrackingUi(); } catch {}
+    await seekExact(selectedBoundary === 'start' ? values.start : values.end);
+  }
+
   async function stepOneFrame(delta) {
+    if (state.stage === 'video') {
+      await stepSelectedBoundary(delta);
+      return;
+    }
+
     stopTracker('frame-step');
     clearGestureState();
     video.pause();
@@ -337,15 +481,14 @@
     const endFrame = Math.floor(bounds.end * rate + 1e-6);
     let frame = Math.round(video.currentTime * rate);
 
-    if (state.segment?.enabled && (frame < startFrame || frame > endFrame)) {
+    if (frame < startFrame || frame > endFrame) {
       frame = delta >= 0 ? startFrame : endFrame;
     } else {
-      frame += delta;
-      if (state.segment?.enabled) frame = clamp(frame, startFrame, endFrame);
-      else frame = clamp(frame, 0, Math.floor(durationValue() * rate));
+      frame = clamp(frame + delta, startFrame, endFrame);
     }
 
     await seekExact(frame / rate);
+    syncSegmentScrubber();
   }
 
   function installUnifiedTransport() {
@@ -370,14 +513,32 @@
       event.preventDefault();
       toggleSegmentPlayback();
     });
+    updateTransportLabels();
   }
 
   function installStageStartBehavior() {
     const originalSetStage = setStage;
     setStage = function setStageWithMeasurementStart(stage) {
       const result = originalSetStage(stage);
-      if (state.stage === stage && (stage === 'scale' || stage === 'track')) {
-        requestAnimationFrame(() => window.seekMeasurementStart(`stage-${stage}`));
+      if (state.stage !== stage) return result;
+
+      updateTimelineMode(stage);
+
+      if (stage === 'scale' || stage === 'track') {
+        requestAnimationFrame(async () => {
+          await window.seekMeasurementStart(`stage-${stage}`);
+          syncSegmentScrubber();
+        });
+      } else if (stage !== 'video') {
+        const bounds = segmentBounds();
+        if (video.currentTime < bounds.start || video.currentTime > bounds.end) {
+          requestAnimationFrame(async () => {
+            await seekExact(bounds.start);
+            syncSegmentScrubber();
+          });
+        } else {
+          syncSegmentScrubber();
+        }
       }
       return result;
     };
@@ -415,14 +576,33 @@
     updateRangeAppearance(start, end);
   }
 
-  video.addEventListener('loadedmetadata', () => requestAnimationFrame(syncRangeAfterMetadata));
-  video.addEventListener('durationchange', () => requestAnimationFrame(syncRangeAfterMetadata));
+  video.addEventListener('loadedmetadata', () => requestAnimationFrame(() => {
+    syncRangeAfterMetadata();
+    syncSegmentScrubber();
+    updateTimelineMode(state.stage);
+  }));
+  video.addEventListener('durationchange', () => requestAnimationFrame(() => {
+    syncRangeAfterMetadata();
+    syncSegmentScrubber();
+  }));
+  video.addEventListener('timeupdate', () => {
+    if (state.stage !== 'video') syncSegmentScrubber();
+  });
+  video.addEventListener('seeked', () => {
+    if (state.stage !== 'video') syncSegmentScrubber();
+  });
   video.addEventListener('ended', () => { playbackToken += 1; });
+  $('#fpsInput')?.addEventListener('input', () => requestAnimationFrame(() => {
+    syncRangeAfterMetadata();
+    syncSegmentScrubber();
+  }));
 
+  installTimelineStyles();
   installUnifiedMeasurementRange();
   installUnifiedScrubber();
   installUnifiedTransport();
   installStageStartBehavior();
   installCoordinateStartGuard();
   syncRangeAfterMetadata();
+  updateTimelineMode(state.stage);
 })();
